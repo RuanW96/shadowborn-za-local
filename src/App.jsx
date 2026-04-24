@@ -43,6 +43,8 @@ const PLAYER_PINS = {
   Nico: "5540",
   AJ: "7622",
   Jaundre: "3185",
+  Dolomieu: "1782",
+  Papi: "4309",
 };
 
 const defaultPlayers = [
