@@ -15,15 +15,19 @@ import {
   Trash2,
   CheckCircle2,
   PencilLine,
+  Upload,
+  MessageCircle,
+  Star,
 } from "lucide-react";
+import { supabase } from "./supabase";
 
-const STORAGE_KEY = "shadowborn-za-v7";
-const AUTH_KEY = "shadowborn-za-player-auth-v3";
+const STORAGE_ROW_ID = 1;
+const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
 const PLAYER_PINS = {
   "The Fudgeman": "4182",
-  Bulletstorm: "1457",
+  Bulletstorm: "2809",
   Thirdstriker: "3319",
   Toxicmuffin: "8842",
   Stifler: "5206",
@@ -65,10 +69,7 @@ const emptyTournament = {
   title: "Shadowborn Tournament",
   format: "2v2",
   teams: [],
-  teamDraft: {
-    name: "",
-    memberIds: [],
-  },
+  teamDraft: { name: "", memberIds: [] },
   activeWinners: [],
   activeRedemption: [],
   completedRounds: [],
@@ -86,6 +87,10 @@ const defaultState = {
   tagline: "Victory awaits in the shadows",
   logoUrl: DEFAULT_LOGO,
   players: defaultPlayers,
+  tournament: emptyTournament,
+  championBanner: null,
+  hallOfFame: [],
+  callouts: [],
   poll: {
     question: "What should we play next?",
     options: [
@@ -95,27 +100,8 @@ const defaultState = {
       { id: 4, label: "Sunday Point Match", votes: 0 },
     ],
   },
-  tournament: emptyTournament,
   sundayHistory: [],
 };
-
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : defaultState;
-  } catch {
-    return defaultState;
-  }
-}
-
-function loadAuth() {
-  try {
-    const saved = localStorage.getItem(AUTH_KEY);
-    return saved ? JSON.parse(saved) : null;
-  } catch {
-    return null;
-  }
-}
 
 function getTeamSize(format) {
   if (format === "1v1") return 1;
@@ -190,21 +176,14 @@ function pairTeams(teamIds, bracket, stage) {
   const matches = [];
   let carry = null;
 
-  if (ids.length % 2 === 1) {
-    carry = ids.pop();
-  }
+  if (ids.length % 2 === 1) carry = ids.pop();
 
   for (let i = 0; i < ids.length; i += 2) {
     matches.push({
       id: `${bracket}-${stage}-${i / 2 + 1}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       bracket,
       stage,
-      label:
-        bracket === "W"
-          ? `Winners Round ${stage}`
-          : bracket === "L"
-          ? `Redemption Round ${stage}`
-          : "Grand Final",
+      label: bracket === "W" ? `Winners Round ${stage}` : bracket === "L" ? `Redemption Round ${stage}` : "Grand Final",
       teamAId: ids[i],
       teamBId: ids[i + 1],
       scoreA: "",
@@ -233,15 +212,16 @@ function getOfficialLosers(matches) {
 }
 
 export default function App() {
-  const [state, setState] = useState(loadState);
-  const [auth, setAuth] = useState(loadAuth);
+  const [state, setState] = useState(defaultState);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveTimer, setSaveTimer] = useState(null);
+  const [auth, setAuth] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [pin, setPin] = useState("");
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth < 768 : false
-  );
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 
   const [newPlayer, setNewPlayer] = useState({
     name: "",
@@ -250,6 +230,12 @@ export default function App() {
     tournamentWins: 0,
     avatar: "",
     role: "player",
+  });
+
+  const [calloutDraft, setCalloutDraft] = useState({
+    challengedId: "",
+    scoreA: "",
+    scoreB: "",
   });
 
   const [sundayEntry, setSundayEntry] = useState({
@@ -266,50 +252,90 @@ export default function App() {
     flawless: false,
   });
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+  const players = state.players || [];
+  const tournament = state.tournament || emptyTournament;
 
-  useEffect(() => {
-    if (auth) {
-      localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-    } else {
-      localStorage.removeItem(AUTH_KEY);
-    }
-  }, [auth]);
-
-  useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 768);
-    }
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  const players = state.players;
-  const tournament = state.tournament;
   const sortedPlayers = useMemo(
     () => [...players].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
     [players]
   );
 
   const loggedInPlayer = auth ? players.find((p) => p.id === auth.playerId) : null;
-  const canAdmin =
-    loggedInPlayer &&
-    (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
+  const canAdmin = loggedInPlayer && (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
+
+  useEffect(() => {
+    loadCloudState();
+  }, []);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 768);
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  async function loadCloudState() {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("shadowborn_state")
+      .select("data")
+      .eq("id", STORAGE_ROW_ID)
+      .single();
+
+    if (!error && data?.data && Object.keys(data.data).length > 0) {
+      setState({
+        ...defaultState,
+        ...data.data,
+        players: data.data.players || defaultPlayers,
+        tournament: { ...emptyTournament, ...(data.data.tournament || {}) },
+        hallOfFame: data.data.hallOfFame || [],
+        callouts: data.data.callouts || [],
+      });
+    } else {
+      await supabase
+        .from("shadowborn_state")
+        .upsert({ id: STORAGE_ROW_ID, data: defaultState, updated_at: new Date().toISOString() });
+      setState(defaultState);
+    }
+
+    setLoading(false);
+  }
+
+  function saveCloudState(nextState) {
+    if (saveTimer) clearTimeout(saveTimer);
+
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      await supabase
+        .from("shadowborn_state")
+        .upsert({ id: STORAGE_ROW_ID, data: nextState, updated_at: new Date().toISOString() });
+      setSaving(false);
+    }, 500);
+
+    setSaveTimer(timer);
+  }
 
   function updateState(updater) {
-    setState((prev) => (typeof updater === "function" ? updater(prev) : updater));
+    setState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveCloudState(next);
+      return next;
+    });
   }
 
   function loginWithPin() {
     const chosen = players.find((p) => p.id === Number(selectedLoginPlayerId));
+
     if (!chosen) {
       setLoginError("Please select your player name.");
       return;
     }
 
     const expectedPin = PLAYER_PINS[chosen.name];
+
     if (!expectedPin) {
       setLoginError("No PIN found for this player.");
       return;
@@ -325,8 +351,10 @@ export default function App() {
       playerName: chosen.name,
       role: chosen.role,
     });
+
     setPin("");
     setLoginError("");
+    setTab("dashboard");
   }
 
   function logout() {
@@ -334,162 +362,7 @@ export default function App() {
     setPin("");
     setSelectedLoginPlayerId("");
     setLoginError("");
-  }
-
-  function updatePlayer(id, field, value) {
-    updateState((prev) => ({
-      ...prev,
-      players: prev.players.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              [field]: ["points", "tournamentWins", "wins", "losses", "mvpPoints", "activityPoints"].includes(field)
-                ? Number(value) || 0
-                : value,
-            }
-          : p
-      ),
-    }));
-  }
-
-  function addPlayer() {
-    if (!canAdmin || !newPlayer.name.trim()) return;
-
-    updateState((prev) => ({
-      ...prev,
-      players: [
-        ...prev.players,
-        {
-          id: Date.now(),
-          name: newPlayer.name.trim(),
-          emblem: newPlayer.emblem || newPlayer.name.trim().slice(0, 2).toUpperCase(),
-          points: Number(newPlayer.points) || 0,
-          tournamentWins: Number(newPlayer.tournamentWins) || 0,
-          wins: 0,
-          losses: 0,
-          mvpPoints: 0,
-          activityPoints: 0,
-          avatar: newPlayer.avatar || "",
-          role: newPlayer.role,
-        },
-      ],
-    }));
-
-    setNewPlayer({
-      name: "",
-      emblem: "",
-      points: 0,
-      tournamentWins: 0,
-      avatar: "",
-      role: "player",
-    });
-  }
-
-  function setTournamentField(field, value) {
-    if (!canAdmin) return;
-    updateState((prev) => ({
-      ...prev,
-      tournament: {
-        ...prev.tournament,
-        [field]: value,
-      },
-    }));
-  }
-
-  function setTeamDraftField(field, value) {
-    if (!canAdmin) return;
-    updateState((prev) => ({
-      ...prev,
-      tournament: {
-        ...prev.tournament,
-        teamDraft: {
-          ...prev.tournament.teamDraft,
-          [field]: value,
-        },
-      },
-    }));
-  }
-
-  function usedPlayerIdsExcludingCurrentTeams(teams) {
-    const ids = new Set();
-    teams.forEach((team) => {
-      team.members.forEach((id) => ids.add(id));
-    });
-    return ids;
-  }
-
-  const usedIds = usedPlayerIdsExcludingCurrentTeams(tournament.teams);
-  const draftTeamSize = getTeamSize(tournament.format);
-
-  function setDraftMember(slot, playerId) {
-    if (!canAdmin) return;
-
-    updateState((prev) => {
-      const nextMembers = [...prev.tournament.teamDraft.memberIds];
-      nextMembers[slot] = playerId ? Number(playerId) : null;
-
-      return {
-        ...prev,
-        tournament: {
-          ...prev.tournament,
-          teamDraft: {
-            ...prev.tournament.teamDraft,
-            memberIds: nextMembers,
-          },
-        },
-      };
-    });
-  }
-
-  function addTeamToTournament() {
-    if (!canAdmin) return;
-
-    const teamSize = getTeamSize(tournament.format);
-    const cleanMembers = tournament.teamDraft.memberIds.filter(Boolean);
-
-    if (cleanMembers.length !== teamSize) return;
-    if (new Set(cleanMembers).size !== cleanMembers.length) return;
-    if (cleanMembers.some((id) => usedIds.has(id))) return;
-
-    const nextTeamId =
-      tournament.teams.length > 0
-        ? Math.max(...tournament.teams.map((t) => t.id)) + 1
-        : 1;
-
-    const draftName =
-      tournament.format === "1v1"
-        ? players.find((p) => p.id === cleanMembers[0])?.name || `Team ${nextTeamId}`
-        : tournament.teamDraft.name.trim() || `Team ${nextTeamId}`;
-
-    updateState((prev) => ({
-      ...prev,
-      tournament: {
-        ...prev.tournament,
-        teams: [
-          ...prev.tournament.teams,
-          {
-            id: nextTeamId,
-            name: draftName,
-            members: cleanMembers,
-          },
-        ],
-        teamDraft: {
-          name: "",
-          memberIds: [],
-        },
-      },
-    }));
-  }
-
-  function removeTeam(teamId) {
-    if (!canAdmin || tournament.status !== "Setup") return;
-    updateState((prev) => ({
-      ...prev,
-      tournament: {
-        ...prev.tournament,
-        teams: prev.tournament.teams.filter((t) => t.id !== teamId),
-      },
-    }));
+    setTab("dashboard");
   }
 
   function findTeam(teamId) {
@@ -498,10 +371,12 @@ export default function App() {
 
   function getTeamName(team) {
     if (!team) return "TBD";
+
     if (tournament.format === "1v1") {
       const single = players.find((p) => p.id === team.members[0]);
       return single?.name || team.name;
     }
+
     return `${team.name} • ${team.members
       .map((id) => players.find((p) => p.id === id)?.name)
       .filter(Boolean)
@@ -521,22 +396,181 @@ export default function App() {
     return teamHasLoggedInPlayer(findTeam(match.teamBId)) && !match.locked && match.submittedByTeamA;
   }
 
+  function updatePlayer(id, field, value) {
+    updateState((prev) => ({
+      ...prev,
+      players: prev.players.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              [field]: ["points", "tournamentWins", "wins", "losses", "mvpPoints", "activityPoints"].includes(field)
+                ? Number(value) || 0
+                : value,
+            }
+          : p
+      ),
+    }));
+  }
+    async function uploadAvatar(playerId, file) {
+    if (!file) return;
+
+    const extension = file.name.split(".").pop();
+    const fileName = `player-${playerId}-${Date.now()}.${extension}`;
+
+    const { error } = await supabase.storage
+      .from("avatars")
+      .upload(fileName, file, {
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+    if (error) {
+      alert("Avatar upload failed.");
+      return;
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("avatars").getPublicUrl(fileName);
+
+    updatePlayer(playerId, "avatar", publicUrl);
+  }
+
+  function addPlayer() {
+    if (!canAdmin) return;
+
+    if (!newPlayer.name.trim()) return;
+
+    const nextId = Math.max(...players.map((p) => p.id), 0) + 1;
+
+    updateState((prev) => ({
+      ...prev,
+      players: [
+        ...prev.players,
+        {
+          id: nextId,
+          name: newPlayer.name.trim(),
+          emblem: (newPlayer.emblem || newPlayer.name.slice(0, 2)).toUpperCase(),
+          points: Number(newPlayer.points) || 0,
+          tournamentWins: Number(newPlayer.tournamentWins) || 0,
+          wins: 0,
+          losses: 0,
+          mvpPoints: 0,
+          activityPoints: 0,
+          avatar: "",
+          role: newPlayer.role,
+        },
+      ],
+    }));
+
+    setNewPlayer({
+      name: "",
+      emblem: "",
+      points: 0,
+      tournamentWins: 0,
+      avatar: "",
+      role: "player",
+    });
+  }
+
+  function removePlayer(playerId) {
+    if (!canAdmin) return;
+
+    updateState((prev) => ({
+      ...prev,
+      players: prev.players.filter((p) => p.id !== playerId),
+    }));
+  }
+
+  function createManualTeam() {
+    if (!canAdmin) return;
+
+    const draft = tournament.teamDraft;
+    const size = getTeamSize(tournament.format);
+
+    if (!draft.name.trim()) return;
+    if (draft.memberIds.length !== size) return;
+
+    const nextId = Date.now();
+
+    updateState((prev) => ({
+      ...prev,
+      tournament: {
+        ...prev.tournament,
+        teams: [
+          ...prev.tournament.teams,
+          {
+            id: nextId,
+            name: draft.name,
+            members: draft.memberIds,
+          },
+        ],
+        teamDraft: {
+          name: "",
+          memberIds: [],
+        },
+      },
+    }));
+  }
+
+  function toggleDraftMember(playerId) {
+    if (!canAdmin) return;
+
+    const maxSize = getTeamSize(tournament.format);
+
+    updateState((prev) => {
+      const draft = prev.tournament.teamDraft;
+
+      let nextMembers = [...draft.memberIds];
+
+      if (nextMembers.includes(playerId)) {
+        nextMembers = nextMembers.filter((id) => id !== playerId);
+      } else {
+        if (nextMembers.length >= maxSize) return prev;
+        nextMembers.push(playerId);
+      }
+
+      return {
+        ...prev,
+        tournament: {
+          ...prev.tournament,
+          teamDraft: {
+            ...draft,
+            memberIds: nextMembers,
+          },
+        },
+      };
+    });
+  }
+
+  function deleteTeam(teamId) {
+    if (!canAdmin) return;
+
+    updateState((prev) => ({
+      ...prev,
+      tournament: {
+        ...prev.tournament,
+        teams: prev.tournament.teams.filter((t) => t.id !== teamId),
+      },
+    }));
+  }
+
   function generateTournament() {
     if (!canAdmin || tournament.teams.length < 2) return;
 
     updateState((prev) => {
-          const teamIds = [...prev.tournament.teams.map((t) => t.id)];
+      const teamIds = [...prev.tournament.teams.map((t) => t.id)];
 
-    for (let i = teamIds.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [teamIds[i], teamIds[j]] = [teamIds[j], teamIds[i]];
-    }
+      for (let i = teamIds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [teamIds[i], teamIds[j]] = [teamIds[j], teamIds[i]];
+      }
 
-    const firstRound = pairTeams(teamIds, "W", 1);
-  
+      const firstRound = pairTeams(teamIds, "W", 1);
 
       return {
         ...prev,
+        championBanner: null,
         tournament: {
           ...prev.tournament,
           activeWinners: firstRound.matches,
@@ -552,243 +586,235 @@ export default function App() {
         },
       };
     });
-  }
 
-  function resetTournament() {
-    if (!canAdmin) return;
-
-    updateState((prev) => ({
-      ...prev,
-      tournament: {
-        ...emptyTournament,
-        title: prev.tournament.title,
-        format: prev.tournament.format,
-      },
-    }));
-  }
-
-  function unlockMatch(matchId) {
-    if (!canAdmin) return;
-
-    updateState((prev) => {
-      const resetList = (list) =>
-        list.map((m) =>
-          m.id === matchId
-            ? {
-                ...m,
-                scoreA: "",
-                scoreB: "",
-                submittedByTeamA: false,
-                teamBConfirmed: false,
-                locked: false,
-                winnerId: null,
-                loserId: null,
-              }
-            : m
-        );
-
-      return {
-        ...prev,
-        tournament: {
-          ...prev.tournament,
-          activeWinners: resetList(prev.tournament.activeWinners),
-          activeRedemption: resetList(prev.tournament.activeRedemption),
-          grandFinal: prev.tournament.grandFinal ? resetList(prev.tournament.grandFinal) : null,
-        },
-      };
-    });
+    setTab("bracket");
   }
 
   function updateMatchField(matchId, field, value) {
     updateState((prev) => {
-      const updateList = (list) =>
-        list.map((m) => {
-          if (m.id !== matchId || m.locked) return m;
-          if (!teamHasLoggedInPlayer(findTeam(m.teamAId))) return m;
-          if (field !== "scoreA" && field !== "scoreB") return m;
-
-          return {
-            ...m,
-            [field]: value,
-            submittedByTeamA: false,
-            teamBConfirmed: false,
-            winnerId: null,
-            loserId: null,
-          };
-        });
+      const apply = (arr) =>
+        arr.map((m) => (m.id === matchId ? { ...m, [field]: value } : m));
 
       return {
         ...prev,
         tournament: {
           ...prev.tournament,
-          activeWinners: updateList(prev.tournament.activeWinners),
-          activeRedemption: updateList(prev.tournament.activeRedemption),
-          grandFinal: prev.tournament.grandFinal ? updateList(prev.tournament.grandFinal) : null,
+          activeWinners: apply(prev.tournament.activeWinners),
+          activeRedemption: apply(prev.tournament.activeRedemption),
+          grandFinal:
+            prev.tournament.grandFinal?.id === matchId
+              ? { ...prev.tournament.grandFinal, [field]: value }
+              : prev.tournament.grandFinal,
         },
       };
     });
   }
 
-  function submitResult(matchId) {
-    updateState((prev) => {
-      const updateList = (list) =>
-        list.map((m) => {
-          if (m.id !== matchId || m.locked) return m;
-          if (!teamHasLoggedInPlayer(findTeam(m.teamAId))) return m;
-
-          const a = Number(m.scoreA);
-          const b = Number(m.scoreB);
-          if (Number.isNaN(a) || Number.isNaN(b) || a === b) return m;
-
-          return {
-            ...m,
-            submittedByTeamA: true,
-            teamBConfirmed: false,
-          };
-        });
-
-      return {
-        ...prev,
-        tournament: {
-          ...prev.tournament,
-          activeWinners: updateList(prev.tournament.activeWinners),
-          activeRedemption: updateList(prev.tournament.activeRedemption),
-          grandFinal: prev.tournament.grandFinal ? updateList(prev.tournament.grandFinal) : null,
-        },
-      };
-    });
+  function submitByTeamA(matchId) {
+    updateMatchField(matchId, "submittedByTeamA", true);
   }
 
-  function confirmResult(matchId) {
+  function confirmByTeamB(matchId) {
     updateState((prev) => {
-      const confirmList = (list) =>
-        list.map((m) => {
-          if (m.id !== matchId || m.locked) return m;
-          if (!teamHasLoggedInPlayer(findTeam(m.teamBId))) return m;
-          if (!m.submittedByTeamA) return m;
+      function finalize(match) {
+        const scoreA = Number(match.scoreA);
+        const scoreB = Number(match.scoreB);
 
-          const a = Number(m.scoreA);
-          const b = Number(m.scoreB);
-          if (Number.isNaN(a) || Number.isNaN(b) || a === b) return m;
+        if (Number.isNaN(scoreA) || Number.isNaN(scoreB)) return match;
 
-          return {
-            ...m,
-            teamBConfirmed: true,
-            locked: true,
-            winnerId: a > b ? m.teamAId : m.teamBId,
-            loserId: a > b ? m.teamBId : m.teamAId,
-          };
-        });
+        const winnerId = scoreA > scoreB ? match.teamAId : match.teamBId;
+        const loserId = scoreA > scoreB ? match.teamBId : match.teamAId;
 
-      const nextTournament = {
-        ...prev.tournament,
-        activeWinners: confirmList(prev.tournament.activeWinners),
-        activeRedemption: confirmList(prev.tournament.activeRedemption),
-        grandFinal: prev.tournament.grandFinal ? confirmList(prev.tournament.grandFinal) : null,
-      };
-
-      return {
-        ...prev,
-        tournament: advanceTournament(nextTournament),
-      };
-    });
-  }
-
-  function advanceTournament(t) {
-    if (t.championTeamId) return t;
-
-    if (t.grandFinal && allLocked(t.grandFinal)) {
-      const gf = t.grandFinal[0];
-      if (gf?.winnerId) {
         return {
-          ...t,
-          completedRounds: [...t.completedRounds, { name: "Grand Final", bracket: "GF", matches: t.grandFinal }],
-          grandFinal: null,
-          championTeamId: gf.winnerId,
-          status: "Finished",
+          ...match,
+          teamBConfirmed: true,
+          locked: true,
+          winnerId,
+          loserId,
         };
       }
-    }
-
-    if (!allLocked(t.activeWinners) || !allLocked(t.activeRedemption)) {
-      return t;
-    }
-
-    const undefeatedAdvancers = [
-      ...(t.winnersCarry ? [t.winnersCarry] : []),
-      ...getOfficialWinners(t.activeWinners),
-    ];
-
-    const droppedFromWinners = getOfficialLosers(t.activeWinners);
-
-    const redemptionAdvancers = [
-      ...(t.redemptionCarry ? [t.redemptionCarry] : []),
-      ...getOfficialWinners(t.activeRedemption),
-    ];
-
-    const nextRedemptionPool = [...redemptionAdvancers, ...droppedFromWinners];
-
-    const archived = [
-      ...t.completedRounds,
-      ...(t.activeWinners.length ? [{ name: `Winners Round ${t.winnersStage}`, bracket: "W", matches: t.activeWinners }] : []),
-      ...(t.activeRedemption.length ? [{ name: `Redemption Round ${t.redemptionStage}`, bracket: "L", matches: t.activeRedemption }] : []),
-    ];
-
-    if (undefeatedAdvancers.length === 1 && nextRedemptionPool.length === 0) {
-      return {
-        ...t,
-        completedRounds: archived,
-        activeWinners: [],
-        activeRedemption: [],
-        winnersCarry: null,
-        redemptionCarry: null,
-        championTeamId: undefeatedAdvancers[0],
-        status: "Finished",
-      };
-    }
-
-    if (undefeatedAdvancers.length === 1 && nextRedemptionPool.length === 1) {
-      const gf = pairTeams([undefeatedAdvancers[0], nextRedemptionPool[0]], "GF", 1);
 
       return {
-        ...t,
-        completedRounds: archived,
-        activeWinners: [],
-        activeRedemption: [],
-        winnersCarry: null,
-        redemptionCarry: null,
-        grandFinal: gf.matches,
-        status: "Grand Final",
+        ...prev,
+        tournament: {
+          ...prev.tournament,
+          activeWinners: prev.tournament.activeWinners.map((m) =>
+            m.id === matchId ? finalize(m) : m
+          ),
+          activeRedemption: prev.tournament.activeRedemption.map((m) =>
+            m.id === matchId ? finalize(m) : m
+          ),
+          grandFinal:
+            prev.tournament.grandFinal?.id === matchId
+              ? finalize(prev.tournament.grandFinal)
+              : prev.tournament.grandFinal,
+        },
       };
-    }
-
-    const nextWStage = t.winnersStage + 1;
-    const nextLStage = t.redemptionStage + 1;
-
-    const newW =
-      undefeatedAdvancers.length > 1
-        ? pairTeams(undefeatedAdvancers, "W", nextWStage)
-        : { matches: [], carry: undefeatedAdvancers[0] || null };
-
-    const newL =
-      nextRedemptionPool.length > 1
-        ? pairTeams(nextRedemptionPool, "L", nextLStage)
-        : { matches: [], carry: nextRedemptionPool[0] || null };
-
-    return {
-      ...t,
-      completedRounds: archived,
-      activeWinners: newW.matches,
-      activeRedemption: newL.matches,
-      winnersCarry: newW.carry,
-      redemptionCarry: newL.carry,
-      winnersStage: nextWStage,
-      redemptionStage: nextLStage,
-      status: "Live",
-    };
+    });
   }
 
-  function applySundayPoints() {
+  function advanceBracket() {
+    if (!canAdmin) return;
+
+    updateState((prev) => {
+      const tournament = prev.tournament;
+
+      const winnersDone = allLocked(tournament.activeWinners);
+      const redemptionDone = allLocked(tournament.activeRedemption);
+
+      if (!winnersDone) return prev;
+
+      const winners = getOfficialWinners(tournament.activeWinners);
+      const losers = getOfficialLosers(tournament.activeWinners);
+
+      const completed = [
+        ...tournament.completedRounds,
+        ...tournament.activeWinners,
+        ...tournament.activeRedemption,
+      ];
+
+      if (winners.length === 1 && losers.length === 1 && redemptionDone) {
+        const grandFinal = {
+          id: `GF-${Date.now()}`,
+          bracket: "GF",
+          stage: 1,
+          label: "Grand Final",
+          teamAId: winners[0],
+          teamBId: losers[0],
+          scoreA: "",
+          scoreB: "",
+          submittedByTeamA: false,
+          teamBConfirmed: false,
+          locked: false,
+          winnerId: null,
+          loserId: null,
+        };
+
+        return {
+          ...prev,
+          tournament: {
+            ...tournament,
+            activeWinners: [],
+            activeRedemption: [],
+            grandFinal,
+            completedRounds: completed,
+          },
+        };
+      }
+
+      const nextWinners = pairTeams(winners, "W", tournament.winnersStage + 1);
+      const nextRedemption = pairTeams(losers, "L", tournament.redemptionStage + 1);
+
+      return {
+        ...prev,
+        tournament: {
+          ...tournament,
+          activeWinners: nextWinners.matches,
+          activeRedemption: nextRedemption.matches,
+          winnersCarry: nextWinners.carry,
+          redemptionCarry: nextRedemption.carry,
+          completedRounds: completed,
+          winnersStage: tournament.winnersStage + 1,
+          redemptionStage: tournament.redemptionStage + 1,
+        },
+      };
+    });
+  }
+
+  function finalizeChampion() {
+    if (!canAdmin) return;
+    if (!tournament.grandFinal?.locked) return;
+
+    const championTeam = findTeam(tournament.grandFinal.winnerId);
+
+    if (!championTeam) return;
+
+    updateState((prev) => ({
+      ...prev,
+      championBanner: {
+        teamId: championTeam.id,
+        teamName: getTeamName(championTeam),
+        createdAt: new Date().toLocaleDateString(),
+      },
+      hallOfFame: [
+        {
+          id: Date.now(),
+          championTeamId: championTeam.id,
+          championName: getTeamName(championTeam),
+          tournamentTitle: prev.tournament.title,
+          createdAt: new Date().toLocaleDateString(),
+        },
+        ...prev.hallOfFame,
+      ],
+      tournament: {
+        ...emptyTournament,
+      },
+    }));
+  }
+
+  function submitCallout() {
+    if (!loggedInPlayer) return;
+    if (!calloutDraft.challengedId) return;
+
+    const challengerIndex = sortedPlayers.findIndex((p) => p.id === loggedInPlayer.id);
+    const challengedIndex = sortedPlayers.findIndex((p) => p.id === Number(calloutDraft.challengedId));
+
+    const distance = Math.abs(challengerIndex - challengedIndex);
+
+    if (distance > 2 || distance === 0) {
+      alert("You may only call out players within 2 positions above or below.");
+      return;
+    }
+
+    updateState((prev) => ({
+      ...prev,
+      callouts: [
+        {
+          id: Date.now(),
+          challengerId: loggedInPlayer.id,
+          challengedId: Number(calloutDraft.challengedId),
+          scoreA: calloutDraft.scoreA,
+          scoreB: calloutDraft.scoreB,
+          confirmed: false,
+          createdAt: new Date().toLocaleDateString(),
+        },
+        ...prev.callouts,
+      ],
+    }));
+
+    setCalloutDraft({
+      challengedId: "",
+      scoreA: "",
+      scoreB: "",
+    });
+  }
+
+  function confirmCallout(calloutId) {
+    updateState((prev) => {
+      const callout = prev.callouts.find((c) => c.id === calloutId);
+
+      if (!callout || callout.confirmed) return prev;
+
+      const scoreA = Number(callout.scoreA);
+      const scoreB = Number(callout.scoreB);
+
+      const winnerId = scoreA > scoreB ? callout.challengerId : callout.challengedId;
+      const loserId = scoreA > scoreB ? callout.challengedId : callout.challengerId;
+
+      return {
+        ...prev,
+        callouts: prev.callouts.map((c) =>
+          c.id === calloutId ? { ...c, confirmed: true } : c
+        ),
+        players: prev.players.map((p) => {
+          if (p.id === winnerId) return { ...p, points: p.points + 10 };
+          if (p.id === loserId) return { ...p, points: p.points - 10 };
+          return p;
+        }),
+      };
+    });
+  }
+    function applySundayPoints() {
     if (!canAdmin) return;
 
     const winnerSet = new Set(sundayEntry.winningTeamIds.map(Number));
@@ -867,7 +893,9 @@ export default function App() {
       ...prev,
       poll: {
         ...prev.poll,
-        options: prev.poll.options.map((o) => (o.id === optionId ? { ...o, votes: o.votes + 1 } : o)),
+        options: prev.poll.options.map((o) =>
+          o.id === optionId ? { ...o, votes: o.votes + 1 } : o
+        ),
       },
     }));
   }
@@ -882,6 +910,7 @@ export default function App() {
 
   function PlayerCard({ player }) {
     const rank = getRank(player.points);
+    const canUpload = loggedInPlayer?.id === player.id || canAdmin;
 
     return (
       <div
@@ -935,20 +964,44 @@ export default function App() {
               <span style={badgeStyle(rank.glow, rank.color)}>{rank.name}</span>
               <span style={badgeStyle()}>{player.role}</span>
             </div>
+
             <div style={{ color: "#d6caef", fontSize: 13, marginTop: 4 }}>
               {player.points} pts • {player.tournamentWins} tournament wins • W {player.wins} / L {player.losses}
             </div>
+
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <span style={badgeStyle()}><Medal size={12} /> MVP {player.mvpPoints}</span>
               <span style={badgeStyle()}><CalendarDays size={12} /> Activity {player.activityPoints}</span>
             </div>
+
+            {canUpload ? (
+              <label
+                style={{
+                  ...buttonStyle(false, false),
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 10,
+                  fontSize: 13,
+                }}
+              >
+                <Upload size={14} />
+                Upload Avatar
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => uploadAvatar(player.id, e.target.files?.[0])}
+                  style={{ display: "none" }}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
       </div>
     );
   }
 
-  function MatchManagementCard({ match }) {
+  function MatchCard({ match }) {
     const teamA = findTeam(match.teamAId);
     const teamB = findTeam(match.teamBId);
     const canA = canTeamAEdit(match);
@@ -1000,6 +1053,7 @@ export default function App() {
             disabled={!canA}
             placeholder="Team 1 score"
           />
+
           <input
             type="number"
             value={match.scoreB}
@@ -1012,7 +1066,7 @@ export default function App() {
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
-            onClick={() => submitResult(match.id)}
+            onClick={() => submitByTeamA(match.id)}
             style={buttonStyle(match.submittedByTeamA, !canA)}
             disabled={!canA}
           >
@@ -1020,21 +1074,12 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => confirmResult(match.id)}
+            onClick={() => confirmByTeamB(match.id)}
             style={buttonStyle(match.teamBConfirmed, !canB)}
             disabled={!canB}
           >
             <CheckCircle2 size={14} /> Team 2 Confirm Result
           </button>
-
-          {canAdmin && (
-            <button
-              onClick={() => unlockMatch(match.id)}
-              style={buttonStyle(false, false)}
-            >
-              Unlock Match
-            </button>
-          )}
         </div>
 
         {!match.locked && match.scoreA !== "" && match.scoreB !== "" && Number(match.scoreA) === Number(match.scoreB) ? (
@@ -1046,7 +1091,7 @@ export default function App() {
     );
   }
 
-  function renderBracketColumn(title, matches, emptyText = "No matches yet.") {
+  function BracketColumn({ title, matches, emptyText }) {
     return (
       <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.18)", minHeight: 220 }}>
         <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 14 }}>{title}</div>
@@ -1155,25 +1200,45 @@ export default function App() {
 
   const championTeam = tournament.championTeamId ? findTeam(tournament.championTeamId) : null;
 
-  return (
-    <div style={appBg}>
-      <div style={{ marginBottom: 20, padding: isMobile ? "10px" : "16px 20px 0" }}>
-        {!loggedInPlayer ? (
-          <div
-            style={{
-              maxWidth: 520,
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 20,
-              padding: 16,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <Lock size={18} />
-              <strong>Player Login</strong>
-            </div>
+  if (loading) {
+    return (
+      <div style={{ ...appBg, display: "grid", placeItems: "center" }}>
+        <div style={cardStyle()}>Loading Shadowborn ZA...</div>
+      </div>
+    );
+  }
 
-            <div style={{ display: "grid", gap: 10 }}>
+  if (!loggedInPlayer) {
+    return (
+      <div style={{ ...appBg, display: "grid", placeItems: "center", padding: 20 }}>
+        <div
+          style={{
+            width: 420,
+            maxWidth: "96vw",
+            ...cardStyle(),
+            textAlign: "center",
+            padding: 28,
+          }}
+        >
+          <img
+            src={state.logoUrl || DEFAULT_LOGO}
+            alt="Shadowborn ZA"
+            style={{
+              width: 140,
+              height: 140,
+              objectFit: "contain",
+              marginBottom: 12,
+            }}
+          />
+
+          <h1 style={{ margin: 0, fontSize: 32 }}>{state.clanName}</h1>
+          <div style={{ color: "#d6caef", marginTop: 8, marginBottom: 24 }}>
+            {state.tagline}
+          </div>
+
+          <div style={{ display: "grid", gap: 12, textAlign: "left" }}>
+            <div>
+              <div style={{ marginBottom: 6 }}>Player Name</div>
               <select
                 value={selectedLoginPlayerId}
                 onChange={(e) => setSelectedLoginPlayerId(e.target.value)}
@@ -1186,105 +1251,126 @@ export default function App() {
                   </option>
                 ))}
               </select>
+            </div>
 
+            <div>
+              <div style={{ marginBottom: 6 }}>PIN</div>
               <input
                 type="password"
-                placeholder="Enter your PIN"
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
+                placeholder="Enter PIN"
                 style={inputStyle(false)}
               />
-
-              {loginError ? <div style={{ color: "#fca5a5", fontSize: 14 }}>{loginError}</div> : null}
-
-              <button onClick={loginWithPin} style={buttonStyle(true, false)}>
-                Login
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              marginBottom: 20,
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ color: "#a78bfa" }}>
-              Logged in as: <strong>{loggedInPlayer.name}</strong> • {loggedInPlayer.role}
             </div>
 
-            <button
-              onClick={logout}
+            {loginError ? (
+              <div style={{ color: "#fca5a5", fontSize: 14 }}>{loginError}</div>
+            ) : null}
+
+            <button onClick={loginWithPin} style={buttonStyle(true, false)}>
+              <Lock size={14} /> Login
+            </button>
+
+            <a
+              href={DISCORD_LINK}
+              target="_blank"
+              rel="noreferrer"
               style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.1)",
-                background: "rgba(255,255,255,0.06)",
-                color: "white",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
+                ...buttonStyle(false, false),
+                textDecoration: "none",
+                textAlign: "center",
               }}
             >
-              <LogOut size={14} />
-              Logout
+              <MessageCircle size={14} /> Join Shadowborn Discord
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={appBg}>
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ color: "#a78bfa" }}>
+            Logged in as <strong>{loggedInPlayer.name}</strong> • {loggedInPlayer.role}
+            {saving ? " • Saving..." : ""}
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <a
+              href={DISCORD_LINK}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                ...buttonStyle(false, false),
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <MessageCircle size={14} /> Discord
+            </a>
+
+            <button onClick={logout} style={buttonStyle(false, false)}>
+              <LogOut size={14} /> Logout
             </button>
           </div>
-        )}
-      </div>
+        </div>
 
-      <div style={{ maxWidth: 1480, margin: "0 auto", padding: 20 }}>
         <div style={{ ...cardStyle(), padding: 24, marginBottom: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
             <div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                 <span style={badgeStyle()}><Trophy size={14} /> Clan Hub</span>
-                <span style={badgeStyle()}><ShieldCheck size={14} /> Admin Tools</span>
+                <span style={badgeStyle()}><ShieldCheck size={14} /> Saved Online</span>
                 <span style={badgeStyle()}><Swords size={14} /> Double Elimination</span>
-                <span style={badgeStyle()}><CalendarDays size={14} /> Sunday Points</span>
+                <span style={badgeStyle()}><Star size={14} /> Hall of Fame</span>
               </div>
               <h1 style={{ margin: 0, fontSize: isMobile ? 30 : 46 }}>{state.clanName}</h1>
               <div style={{ color: "#d6c8ef", marginTop: 8 }}>{state.tagline}</div>
             </div>
 
-            <div
+            <img
+              src={state.logoUrl || DEFAULT_LOGO}
+              alt="Shadowborn ZA"
               style={{
                 width: isMobile ? 90 : 126,
                 height: isMobile ? 90 : 126,
+                objectFit: "contain",
                 borderRadius: 28,
-                overflow: "hidden",
                 background: "rgba(255,255,255,0.05)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
                 border: "1px solid rgba(255,255,255,0.1)",
+                padding: 8,
               }}
-            >
-              {state.logoUrl ? (
-                <img
-                  src={state.logoUrl}
-                  alt="Shadowborn ZA"
-                  style={{ width: "100%", height: "100%", objectFit: "contain", padding: 8 }}
-                />
-              ) : (
-                <div style={{ fontWeight: 900, fontSize: 28 }}>SZ</div>
-              )}
-            </div>
+            />
           </div>
         </div>
+
+        {state.championBanner ? (
+          <div style={{ ...cardStyle(), marginBottom: 18, background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(168,85,247,0.18))" }}>
+            <div style={{ fontSize: 14, color: "#fde68a", fontWeight: 800 }}>CURRENT CHAMPION</div>
+            <div style={{ fontSize: 28, fontWeight: 900, marginTop: 6 }}>
+              {state.championBanner.teamName}
+            </div>
+            <div style={{ color: "#d6caef", marginTop: 4 }}>
+              Crowned on {state.championBanner.createdAt}
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
           {[
             ["dashboard", "Dashboard"],
             ["leaderboard", "Leaderboard"],
             ["players", "Players"],
+            ["callouts", "Call-outs"],
             ["tournament", "Tournament"],
             ["bracket", "Bracket"],
+            ["hall", "Hall of Fame"],
             ["sunday", "Sunday Points"],
             ["vote", "Vote"],
           ].map(([key, label]) => (
@@ -1297,38 +1383,13 @@ export default function App() {
         {tab === "dashboard" && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 20 }}>
-              <div style={cardStyle()}>
-                <Users />
-                <div style={{ marginTop: 12, color: "#cfc4e8" }}>Total Players</div>
-                <div style={{ fontSize: 32, fontWeight: 900 }}>{players.length}</div>
-              </div>
-
-              <div style={cardStyle()}>
-                <Swords />
-                <div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Teams</div>
-                <div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.teams.length}</div>
-              </div>
-
-              <div style={cardStyle()}>
-                <Target />
-                <div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Format</div>
-                <div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.format}</div>
-              </div>
-
-              <div style={cardStyle()}>
-                <Crown />
-                <div style={{ marginTop: 12, color: "#cfc4e8" }}>Champion</div>
-                <div style={{ fontSize: 20, fontWeight: 900 }}>{championTeam ? getTeamName(championTeam) : "TBD"}</div>
-              </div>
+              <div style={cardStyle()}><Users /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Total Players</div><div style={{ fontSize: 32, fontWeight: 900 }}>{players.length}</div></div>
+              <div style={cardStyle()}><Swords /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Teams</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.teams.length}</div></div>
+              <div style={cardStyle()}><Target /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Format</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.format}</div></div>
+              <div style={cardStyle()}><Crown /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Champion</div><div style={{ fontSize: 20, fontWeight: 900 }}>{championTeam ? getTeamName(championTeam) : state.championBanner?.teamName || "TBD"}</div></div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr",
-                gap: 16,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr", gap: 16 }}>
               <div style={cardStyle()}>
                 <h2 style={{ marginTop: 0 }}>Top Leaderboard</h2>
                 <div style={{ display: "grid", gap: 12 }}>
@@ -1370,18 +1431,7 @@ export default function App() {
                 <div style={cardStyle()}>
                   <h2 style={{ marginTop: 0 }}>Vote Snapshot</h2>
                   {state.poll.options.map((option) => (
-                    <div
-                      key={option.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: 12,
-                        borderRadius: 14,
-                        background: "rgba(0,0,0,0.18)",
-                        marginBottom: 10,
-                      }}
-                    >
+                    <div key={option.id} style={{ display: "flex", justifyContent: "space-between", padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)", marginBottom: 10 }}>
                       <div>{option.label}</div>
                       <span style={badgeStyle()}>{option.votes} votes</span>
                     </div>
@@ -1396,48 +1446,16 @@ export default function App() {
           <div style={{ display: "grid", gap: 12 }}>
             {sortedPlayers.map((player, index) => (
               <div key={player.id} style={{ ...cardStyle(), padding: 14 }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile ? "1fr" : "80px 1.1fr repeat(4, 120px)",
-                    gap: 12,
-                    alignItems: "center",
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "80px 1.1fr repeat(4, 120px)", gap: 12, alignItems: "center" }}>
                   <div style={{ fontWeight: 900, fontSize: 22 }}>#{index + 1}</div>
                   <div>
                     <div style={{ fontWeight: 800 }}>{player.name}</div>
                     <div style={{ color: "#d5caec", fontSize: 13 }}>{getRank(player.points).name}</div>
                   </div>
-
-                  <input
-                    type="number"
-                    value={player.points}
-                    onChange={(e) => updatePlayer(player.id, "points", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                  <input
-                    type="number"
-                    value={player.tournamentWins}
-                    onChange={(e) => updatePlayer(player.id, "tournamentWins", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                  <input
-                    type="number"
-                    value={player.wins}
-                    onChange={(e) => updatePlayer(player.id, "wins", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                  <input
-                    type="number"
-                    value={player.losses}
-                    onChange={(e) => updatePlayer(player.id, "losses", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
+                  <input type="number" value={player.points} onChange={(e) => updatePlayer(player.id, "points", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
+                  <input type="number" value={player.tournamentWins} onChange={(e) => updatePlayer(player.id, "tournamentWins", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
+                  <input type="number" value={player.wins} onChange={(e) => updatePlayer(player.id, "wins", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
+                  <input type="number" value={player.losses} onChange={(e) => updatePlayer(player.id, "losses", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
                 </div>
               </div>
             ))}
@@ -1445,79 +1463,104 @@ export default function App() {
         )}
 
         {tab === "players" && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1.25fr 0.75fr",
-              gap: 16,
-            }}
-          >
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.25fr 0.75fr", gap: 16 }}>
             <div style={{ display: "grid", gap: 12 }}>
-              {players.map((player) => (
-                <PlayerCard key={player.id} player={player} />
-              ))}
+              {players.map((player) => <PlayerCard key={player.id} player={player} />)}
             </div>
 
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Add Clan Member</h2>
 
               <div style={{ marginBottom: 8 }}>Name</div>
-              <input
-                value={newPlayer.name}
-                onChange={(e) => setNewPlayer({ ...newPlayer, name: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                disabled={!canAdmin}
-              />
+              <input value={newPlayer.name} onChange={(e) => setNewPlayer({ ...newPlayer, name: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
               <div style={{ marginBottom: 8 }}>Emblem</div>
-              <input
-                value={newPlayer.emblem}
-                onChange={(e) => setNewPlayer({ ...newPlayer, emblem: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                disabled={!canAdmin}
-              />
+              <input value={newPlayer.emblem} onChange={(e) => setNewPlayer({ ...newPlayer, emblem: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
               <div style={{ marginBottom: 8 }}>Starting Points</div>
-              <input
-                type="number"
-                value={newPlayer.points}
-                onChange={(e) => setNewPlayer({ ...newPlayer, points: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                disabled={!canAdmin}
-              />
+              <input type="number" value={newPlayer.points} onChange={(e) => setNewPlayer({ ...newPlayer, points: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
               <div style={{ marginBottom: 8 }}>Tournament Wins</div>
-              <input
-                type="number"
-                value={newPlayer.tournamentWins}
-                onChange={(e) => setNewPlayer({ ...newPlayer, tournamentWins: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                disabled={!canAdmin}
-              />
+              <input type="number" value={newPlayer.tournamentWins} onChange={(e) => setNewPlayer({ ...newPlayer, tournamentWins: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
               <div style={{ marginBottom: 8 }}>Role</div>
-              <select
-                value={newPlayer.role}
-                onChange={(e) => setNewPlayer({ ...newPlayer, role: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                disabled={!canAdmin}
-              >
+              <select value={newPlayer.role} onChange={(e) => setNewPlayer({ ...newPlayer, role: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin}>
                 <option value="leader">leader</option>
                 <option value="co-leader">co-leader</option>
                 <option value="player">player</option>
               </select>
 
-              <div style={{ marginBottom: 8 }}>Profile Image URL</div>
-              <input
-                value={newPlayer.avatar}
-                onChange={(e) => setNewPlayer({ ...newPlayer, avatar: e.target.value })}
-                style={{ ...inputStyle(!canAdmin), marginBottom: 14 }}
-                disabled={!canAdmin}
-              />
-
               <button onClick={addPlayer} style={{ ...buttonStyle(true, !canAdmin), width: "100%" }} disabled={!canAdmin}>
-                <Plus size={16} style={{ marginRight: 6 }} /> Add Player
+                <Plus size={16} /> Add Player
               </button>
+            </div>
+          </div>
+        )}
+
+        {tab === "callouts" && (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "0.8fr 1.2fr", gap: 16 }}>
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>Create Call-out</h2>
+              <div style={{ color: "#d6caef", marginBottom: 12 }}>
+                You can call out someone within 2 positions above or below you. Winner +10, loser -10.
+              </div>
+
+              <select
+                value={calloutDraft.challengedId}
+                onChange={(e) => setCalloutDraft({ ...calloutDraft, challengedId: e.target.value })}
+                style={{ ...inputStyle(false), marginBottom: 12 }}
+              >
+                <option value="">Select opponent</option>
+                {sortedPlayers
+                  .filter((p) => {
+                    const me = sortedPlayers.findIndex((x) => x.id === loggedInPlayer.id);
+                    const them = sortedPlayers.findIndex((x) => x.id === p.id);
+                    return p.id !== loggedInPlayer.id && Math.abs(me - them) <= 2;
+                  })
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+              </select>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <input placeholder="Your score" value={calloutDraft.scoreA} onChange={(e) => setCalloutDraft({ ...calloutDraft, scoreA: e.target.value })} style={inputStyle(false)} />
+                <input placeholder="Opponent score" value={calloutDraft.scoreB} onChange={(e) => setCalloutDraft({ ...calloutDraft, scoreB: e.target.value })} style={inputStyle(false)} />
+              </div>
+
+              <button onClick={submitCallout} style={buttonStyle(true, false)}>Submit Call-out</button>
+            </div>
+
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>Call-out History</h2>
+              {state.callouts.length === 0 ? (
+                <div style={{ color: "#d6caef" }}>No call-outs yet.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {state.callouts.map((c) => {
+                    const challenger = players.find((p) => p.id === c.challengerId);
+                    const challenged = players.find((p) => p.id === c.challengedId);
+                    const canConfirm = loggedInPlayer?.id === c.challengedId && !c.confirmed;
+
+                    return (
+                      <div key={c.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
+                        <div style={{ fontWeight: 800 }}>{challenger?.name} vs {challenged?.name}</div>
+                        <div style={{ color: "#d6caef", marginTop: 4 }}>Score: {c.scoreA} - {c.scoreB}</div>
+                        <div style={{ marginTop: 8 }}>
+                          <span style={badgeStyle(c.confirmed ? "rgba(34,197,94,0.18)" : "rgba(255,255,255,0.08)", c.confirmed ? "#86efac" : "white")}>
+                            {c.confirmed ? "Confirmed" : "Pending"}
+                          </span>
+                        </div>
+
+                        {canConfirm ? (
+                          <button onClick={() => confirmCallout(c.id)} style={{ ...buttonStyle(true, false), marginTop: 10 }}>
+                            Confirm Result
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1527,197 +1570,70 @@ export default function App() {
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Tournament Setup</h2>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr" : "1fr 180px auto auto",
-                  gap: 12,
-                  alignItems: "end",
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px auto auto auto", gap: 12, alignItems: "end" }}>
                 <div>
                   <div style={{ marginBottom: 8 }}>Tournament Title</div>
-                  <input
-                    value={tournament.title}
-                    onChange={(e) => setTournamentField("title", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
+                  <input value={tournament.title} onChange={(e) => updateState((prev) => ({ ...prev, tournament: { ...prev.tournament, title: e.target.value } }))} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
                 </div>
 
                 <div>
                   <div style={{ marginBottom: 8 }}>Format</div>
-                  <select
-                    value={tournament.format}
-                    onChange={(e) => setTournamentField("format", e.target.value)}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  >
+                  <select value={tournament.format} onChange={(e) => updateState((prev) => ({ ...prev, tournament: { ...prev.tournament, format: e.target.value, teams: [], teamDraft: { name: "", memberIds: [] } } }))} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
                     <option>1v1</option>
                     <option>2v2</option>
                     <option>4v4</option>
                   </select>
                 </div>
 
-                <button style={buttonStyle(true, !canAdmin)} onClick={generateTournament} disabled={!canAdmin || tournament.teams.length < 2}>
-                  Generate Bracket
-                </button>
-
-                <button style={buttonStyle(false, !canAdmin)} onClick={resetTournament} disabled={!canAdmin}>
-                  Reset
-                </button>
+                <button onClick={generateTournament} style={buttonStyle(true, !canAdmin || tournament.teams.length < 2)} disabled={!canAdmin || tournament.teams.length < 2}>Generate Bracket</button>
+                <button onClick={advanceBracket} style={buttonStyle(false, !canAdmin)} disabled={!canAdmin}>Advance Bracket</button>
+                <button onClick={finalizeChampion} style={buttonStyle(false, !canAdmin)} disabled={!canAdmin}>Finalize Champion</button>
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile ? "1fr" : "0.95fr 1.05fr",
-                gap: 16,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "0.8fr 1.2fr", gap: 16 }}>
               <div style={cardStyle()}>
                 <h2 style={{ marginTop: 0 }}>Manual Team Builder</h2>
-                <div style={{ color: "#d6caef", marginBottom: 12 }}>
-                  Format: {tournament.format} • Team size: {draftTeamSize} • Build teams manually before generating the bracket.
+
+                <input
+                  placeholder="Team name"
+                  value={tournament.teamDraft.name}
+                  onChange={(e) => updateState((prev) => ({ ...prev, tournament: { ...prev.tournament, teamDraft: { ...prev.tournament.teamDraft, name: e.target.value } } }))}
+                  style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
+                  disabled={!canAdmin}
+                />
+
+                <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                  {players.map((p) => {
+                    const selected = tournament.teamDraft.memberIds.includes(p.id);
+                    return (
+                      <button key={p.id} onClick={() => toggleDraftMember(p.id)} style={buttonStyle(selected, !canAdmin)} disabled={!canAdmin}>
+                        {p.name}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {tournament.format !== "1v1" && (
-                  <>
-                    <div style={{ marginBottom: 8 }}>Team Name</div>
-                    <input
-                      value={tournament.teamDraft.name}
-                      onChange={(e) => setTeamDraftField("name", e.target.value)}
-                      style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                      disabled={!canAdmin}
-                      placeholder="Example: Team Alpha"
-                    />
-                  </>
-                )}
+                <button onClick={createManualTeam} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>Create Team</button>
 
+                <h3>Teams</h3>
                 <div style={{ display: "grid", gap: 10 }}>
-                  {Array.from({ length: draftTeamSize }).map((_, index) => (
-                    <select
-                      key={index}
-                      value={tournament.teamDraft.memberIds[index] || ""}
-                      onChange={(e) => setDraftMember(index, e.target.value)}
-                      style={inputStyle(!canAdmin)}
-                      disabled={!canAdmin}
-                    >
-                      <option value="">Select player</option>
-                      {players
-                        .filter((p) => {
-                          const selectedElsewhere = tournament.teamDraft.memberIds.some(
-                            (id, slotIndex) => slotIndex !== index && Number(id) === p.id
-                          );
-                          const alreadyUsed = usedIds.has(p.id);
-                          return !selectedElsewhere && !alreadyUsed;
-                        })
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                    </select>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <button onClick={addTeamToTournament} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>
-                    Add Team
-                  </button>
-                </div>
-
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ marginBottom: 8, fontWeight: 800 }}>Saved Teams</div>
-                  {tournament.teams.length === 0 ? (
-                    <div style={{ color: "#cfc4e8" }}>No teams added yet.</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {tournament.teams.map((team) => (
-                        <div
-                          key={team.id}
-                          style={{
-                            padding: 12,
-                            borderRadius: 14,
-                            background: "rgba(0,0,0,0.18)",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontWeight: 800 }}>{getTeamName(team)}</div>
-                          </div>
-
-                          {canAdmin && tournament.status === "Setup" && (
-                            <button
-                              onClick={() => removeTeam(team.id)}
-                              style={{
-                                ...buttonStyle(false, false),
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              <Trash2 size={14} />
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                  {tournament.teams.map((team) => (
+                    <div key={team.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)", display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div>{getTeamName(team)}</div>
+                      {canAdmin ? <button onClick={() => deleteTeam(team.id)} style={buttonStyle(false, false)}><Trash2 size={14} /></button> : null}
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
 
               <div style={cardStyle()}>
                 <h2 style={{ marginTop: 0 }}>Match Management</h2>
-                <div style={{ color: "#d6caef", marginBottom: 14 }}>
-                  Team 1 enters both scores. Team 2 confirms. Once confirmed, the bracket advances automatically.
-                </div>
 
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Active Winners Bracket</div>
-                    {tournament.activeWinners.length === 0 ? (
-                      <div style={{ color: "#cfc4e8" }}>No active winners matches.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {tournament.activeWinners.map((match) => (
-                          <MatchManagementCard key={match.id} match={match} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Active Redemption Bracket</div>
-                    {tournament.activeRedemption.length === 0 ? (
-                      <div style={{ color: "#cfc4e8" }}>No active redemption matches.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {tournament.activeRedemption.map((match) => (
-                          <MatchManagementCard key={match.id} match={match} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>Grand Final</div>
-                    {!tournament.grandFinal || tournament.grandFinal.length === 0 ? (
-                      <div style={{ color: "#cfc4e8" }}>Grand Final not ready yet.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {tournament.grandFinal.map((match) => (
-                          <MatchManagementCard key={match.id} match={match} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div style={{ display: "grid", gap: 14 }}>
+                  {[...tournament.activeWinners, ...tournament.activeRedemption, ...(tournament.grandFinal ? [tournament.grandFinal] : [])].map((match) => (
+                    <MatchCard key={match.id} match={match} />
+                  ))}
                 </div>
               </div>
             </div>
@@ -1726,201 +1642,91 @@ export default function App() {
 
         {tab === "bracket" && (
           <div style={{ display: "grid", gap: 18 }}>
-            <div style={{ ...cardStyle(), background: "rgba(255,255,255,0.03)" }}>
-              <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 12 }}>Bracket Tree View</div>
-              <div style={{ color: "#d6caef", marginBottom: 16 }}>
-                CDL-style layout without dates. Winners bracket, redemption bracket, and grand final shown separately.
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
-                  gap: 14,
-                  alignItems: "start",
-                }}
-              >
-                {renderBracketColumn(
-                  "Winners Bracket",
-                  tournament.activeWinners,
-                  "No active winners matches."
-                )}
-
-                {renderBracketColumn(
-                  "Redemption Bracket",
-                  tournament.activeRedemption,
-                  "No active redemption matches yet."
-                )}
-
-                {renderBracketColumn(
-                  "Grand Final",
-                  tournament.grandFinal || [],
-                  "Grand Final not ready yet."
-                )}
-              </div>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 14, alignItems: "start" }}>
+              <BracketColumn title="Winners Bracket" matches={tournament.activeWinners} emptyText="No active winners matches." />
+              <BracketColumn title="Redemption Bracket" matches={tournament.activeRedemption} emptyText="No active redemption matches yet." />
+              <BracketColumn title="Grand Final" matches={tournament.grandFinal ? [tournament.grandFinal] : []} emptyText="Grand Final not ready yet." />
             </div>
 
-            {tournament.winnersCarry ? (
-              <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.18)" }}>
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>Winners Carry / Bye</div>
-                <div>{getTeamName(findTeam(tournament.winnersCarry))}</div>
-              </div>
-            ) : null}
-
-            {tournament.redemptionCarry ? (
-              <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.18)" }}>
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>Redemption Carry / Bye</div>
-                <div>{getTeamName(findTeam(tournament.redemptionCarry))}</div>
-              </div>
-            ) : null}
-
-            <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.18)" }}>
-              <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12 }}>Completed Rounds</div>
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>Completed Rounds</h2>
 
               {tournament.completedRounds.length === 0 ? (
-                <div style={{ color: "#cfc4e8" }}>No completed rounds yet.</div>
+                <div style={{ color: "#d6caef" }}>No completed rounds yet.</div>
               ) : (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {tournament.completedRounds.map((round, index) => (
-                    <div key={`${round.name}-${index}`} style={{ padding: 12, borderRadius: 14, background: "rgba(255,255,255,0.04)" }}>
-                      <div style={{ fontWeight: 800, marginBottom: 8 }}>{round.name}</div>
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {round.matches.map((match) => {
-                          const teamA = findTeam(match.teamAId);
-                          const teamB = findTeam(match.teamBId);
-                          const winner = findTeam(match.winnerId);
-
-                          return (
-                            <div key={match.id} style={{ padding: 10, borderRadius: 12, background: "rgba(0,0,0,0.18)" }}>
-                              <div style={{ fontWeight: 700 }}>
-                                {getTeamName(teamA)} vs {getTeamName(teamB)}
-                              </div>
-                              <div style={{ color: "#d6caef", fontSize: 13, marginTop: 4 }}>
-                                Score: {match.scoreA} - {match.scoreB}
-                              </div>
-                              <div style={{ color: "#86efac", fontSize: 13, marginTop: 4 }}>
-                                Winner: {winner ? getTeamName(winner) : "TBD"}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {tournament.completedRounds.map((match) => (
+                    <div key={match.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
+                      {getTeamName(findTeam(match.teamAId))} vs {getTeamName(findTeam(match.teamBId))} — {match.scoreA}-{match.scoreB}
                     </div>
                   ))}
                 </div>
               )}
             </div>
+          </div>
+        )}
 
-            {championTeam ? (
-              <div style={{ ...cardStyle(), background: "rgba(34,197,94,0.08)" }}>
-                <div style={{ fontWeight: 900, fontSize: 20 }}>Champion</div>
-                <div style={{ marginTop: 8 }}>{getTeamName(championTeam)}</div>
+        {tab === "hall" && (
+          <div style={cardStyle()}>
+            <h2 style={{ marginTop: 0 }}>Hall of Fame</h2>
+            {state.hallOfFame.length === 0 ? (
+              <div style={{ color: "#d6caef" }}>No champions recorded yet.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {state.hallOfFame.map((h) => (
+                  <div key={h.id} style={{ padding: 14, borderRadius: 16, background: "rgba(0,0,0,0.18)" }}>
+                    <div style={{ fontWeight: 900 }}>{h.championName}</div>
+                    <div style={{ color: "#d6caef", marginTop: 4 }}>{h.tournamentTitle} • {h.createdAt}</div>
+                  </div>
+                ))}
               </div>
-            ) : null}
+            )}
           </div>
         )}
 
         {tab === "sunday" && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "0.95fr 1.05fr",
-              gap: 16,
-            }}
-          >
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "0.95fr 1.05fr", gap: 16 }}>
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Sunday Point Match Calculator</h2>
               <div style={{ color: "#d6caef", marginBottom: 12 }}>
-                Win +10 each, loss +5 each, winning MVP +10, losing MVP +5, objective +2, best KD +2, 0 deaths +5, flawless win +15.
+                Best KD is awarded to only one player in the whole match.
               </div>
 
               <div style={{ display: "grid", gap: 12 }}>
-                <div>
-                  <div style={{ marginBottom: 6 }}>Mode</div>
-                  <select
-                    value={sundayEntry.mode}
-                    onChange={(e) => setSundayEntry({ ...sundayEntry, mode: e.target.value })}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  >
-                    <option>Hardpoint</option>
-                    <option>SND</option>
-                    <option>Overload</option>
-                  </select>
-                </div>
+                <select value={sundayEntry.mode} onChange={(e) => setSundayEntry({ ...sundayEntry, mode: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
+                  <option>Hardpoint</option>
+                  <option>SND</option>
+                  <option>Overload</option>
+                </select>
 
-                <div>
-                  <div style={{ marginBottom: 6 }}>Map / Match Name</div>
-                  <input
-                    value={sundayEntry.mapName}
-                    onChange={(e) => setSundayEntry({ ...sundayEntry, mapName: e.target.value })}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                </div>
+                <input placeholder="Map / Match Name" value={sundayEntry.mapName} onChange={(e) => setSundayEntry({ ...sundayEntry, mapName: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
+                <input placeholder="Score Summary" value={sundayEntry.scoreText} onChange={(e) => setSundayEntry({ ...sundayEntry, scoreText: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
 
-                <div>
-                  <div style={{ marginBottom: 6 }}>Score Summary</div>
-                  <input
-                    value={sundayEntry.scoreText}
-                    onChange={(e) => setSundayEntry({ ...sundayEntry, scoreText: e.target.value })}
-                    placeholder="250-47 or 6-0"
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                    gap: 12,
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                   <div>
-                    <div style={{ marginBottom: 6 }}>Winning Team</div>
+                    <h4>Winning Team</h4>
                     {Array.from({ length: 4 }).map((_, index) => (
-                      <select
-                        key={`w-${index}`}
-                        value={sundayEntry.winningTeamIds[index] || ""}
-                        onChange={(e) => {
-                          const next = [...sundayEntry.winningTeamIds];
-                          next[index] = Number(e.target.value);
-                          setSundayEntry({ ...sundayEntry, winningTeamIds: next.filter(Boolean) });
-                        }}
-                        style={{ ...inputStyle(!canAdmin), marginBottom: 8 }}
-                        disabled={!canAdmin}
-                      >
+                      <select key={`w-${index}`} value={sundayEntry.winningTeamIds[index] || ""} onChange={(e) => {
+                        const next = [...sundayEntry.winningTeamIds];
+                        next[index] = Number(e.target.value);
+                        setSundayEntry({ ...sundayEntry, winningTeamIds: next.filter(Boolean) });
+                      }} style={{ ...inputStyle(!canAdmin), marginBottom: 8 }} disabled={!canAdmin}>
                         <option value="">Select player</option>
-                        {players.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
+                        {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     ))}
                   </div>
 
                   <div>
-                    <div style={{ marginBottom: 6 }}>Losing Team</div>
+                    <h4>Losing Team</h4>
                     {Array.from({ length: 4 }).map((_, index) => (
-                      <select
-                        key={`l-${index}`}
-                        value={sundayEntry.losingTeamIds[index] || ""}
-                        onChange={(e) => {
-                          const next = [...sundayEntry.losingTeamIds];
-                          next[index] = Number(e.target.value);
-                          setSundayEntry({ ...sundayEntry, losingTeamIds: next.filter(Boolean) });
-                        }}
-                        style={{ ...inputStyle(!canAdmin), marginBottom: 8 }}
-                        disabled={!canAdmin}
-                      >
+                      <select key={`l-${index}`} value={sundayEntry.losingTeamIds[index] || ""} onChange={(e) => {
+                        const next = [...sundayEntry.losingTeamIds];
+                        next[index] = Number(e.target.value);
+                        setSundayEntry({ ...sundayEntry, losingTeamIds: next.filter(Boolean) });
+                      }} style={{ ...inputStyle(!canAdmin), marginBottom: 8 }} disabled={!canAdmin}>
                         <option value="">Select player</option>
-                        {players.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
+                        {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     ))}
                   </div>
@@ -1930,40 +1736,20 @@ export default function App() {
                   ["Winning MVP", "winningMvpId"],
                   ["Losing MVP", "losingMvpId"],
                   ["Highest Objective", "objectiveLeaderId"],
-                  ["Best KD", "bestKdId"],
+                  ["Best KD Overall", "bestKdId"],
                   ["0 Deaths", "zeroDeathId"],
                 ].map(([label, field]) => (
-                  <div key={field}>
-                    <div style={{ marginBottom: 6 }}>{label}</div>
-                    <select
-                      value={sundayEntry[field]}
-                      onChange={(e) => setSundayEntry({ ...sundayEntry, [field]: e.target.value })}
-                      style={inputStyle(!canAdmin)}
-                      disabled={!canAdmin}
-                    >
-                      <option value="">Select player</option>
-                      {players.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <select key={field} value={sundayEntry[field]} onChange={(e) => setSundayEntry({ ...sundayEntry, [field]: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
+                    <option value="">{label}</option>
+                    {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 ))}
 
-                <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input
-                    type="checkbox"
-                    checked={sundayEntry.flawless}
-                    onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })}
-                    disabled={!canAdmin}
-                  />
-                  Flawless victory bonus applies
+                <label>
+                  <input type="checkbox" checked={sundayEntry.flawless} onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })} disabled={!canAdmin} /> Flawless victory bonus
                 </label>
 
-                <button onClick={applySundayPoints} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>
-                  Apply Sunday Points
-                </button>
+                <button onClick={applySundayPoints} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>Apply Sunday Points</button>
               </div>
             </div>
 
@@ -1975,13 +1761,8 @@ export default function App() {
                 <div style={{ display: "grid", gap: 12 }}>
                   {state.sundayHistory.map((entry) => (
                     <div key={entry.id} style={{ padding: 14, borderRadius: 16, background: "rgba(0,0,0,0.18)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                        <div style={{ fontWeight: 800 }}>{entry.mapName || entry.mode}</div>
-                        <span style={badgeStyle()}>{entry.createdAt}</span>
-                      </div>
-                      <div style={{ color: "#d6caef", fontSize: 13 }}>
-                        Mode: {entry.mode} • Score: {entry.scoreText || "-"}
-                      </div>
+                      <div style={{ fontWeight: 800 }}>{entry.mapName || entry.mode}</div>
+                      <div style={{ color: "#d6caef", fontSize: 13 }}>Mode: {entry.mode} • Score: {entry.scoreText || "-"}</div>
                     </div>
                   ))}
                 </div>
@@ -1995,25 +1776,11 @@ export default function App() {
             <h2 style={{ marginTop: 0 }}>{state.poll.question}</h2>
             <div style={{ display: "grid", gap: 12 }}>
               {state.poll.options.map((option) => (
-                <div
-                  key={option.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: 14,
-                    borderRadius: 16,
-                    background: "rgba(0,0,0,0.18)",
-                    flexWrap: "wrap",
-                    gap: 10,
-                  }}
-                >
+                <div key={option.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 14, borderRadius: 16, background: "rgba(0,0,0,0.18)", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ fontWeight: 700 }}>{option.label}</div>
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <span style={badgeStyle()}>{option.votes} votes</span>
-                    <button onClick={() => vote(option.id)} style={buttonStyle(true, false)}>
-                      Vote
-                    </button>
+                    <button onClick={() => vote(option.id)} style={buttonStyle(true, false)}>Vote</button>
                   </div>
                 </div>
               ))}
