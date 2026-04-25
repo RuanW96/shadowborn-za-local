@@ -266,8 +266,38 @@ export default function App() {
   const canAdmin = loggedInPlayer && (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
 
   useEffect(() => {
-    loadCloudState();
-  }, []);
+  loadCloudState();
+}, []);
+
+useEffect(() => {
+  if (!loggedInPlayer) return;
+
+  const interval = setInterval(async () => {
+    const { data, error } = await supabase
+      .from("shadowborn_state")
+      .select("data")
+      .eq("id", STORAGE_ROW_ID)
+      .single();
+
+    if (!error && data?.data) {
+      setState((prev) => {
+        return {
+          ...prev,
+          ...data.data,
+          players: data.data.players || prev.players,
+          tournament: data.data.tournament || prev.tournament,
+          hallOfFame: data.data.hallOfFame || prev.hallOfFame,
+          callouts: data.data.callouts || prev.callouts,
+          championBanner: data.data.championBanner || prev.championBanner,
+        };
+      });
+    }
+  }, 2000);
+
+  return () => clearInterval(interval);
+}, [loggedInPlayer]);
+    
+  
 
   useEffect(() => {
     function handleResize() {
@@ -592,10 +622,56 @@ export default function App() {
     setTab("bracket");
   }
 
+  function awardTeamPoints(playersList, teamsList, teamId, pointsToAdd, statType = null) {
+    const team = teamsList.find((t) => t.id === teamId);
+    if (!team) return playersList;
+
+    return playersList.map((p) => {
+      if (!team.members.includes(p.id)) return p;
+
+      return {
+        ...p,
+        points: (Number(p.points) || 0) + pointsToAdd,
+        wins: statType === "win" ? (Number(p.wins) || 0) + 1 : p.wins,
+        losses: statType === "loss" ? (Number(p.losses) || 0) + 1 : p.losses,
+        tournamentWins:
+          statType === "champion" ? (Number(p.tournamentWins) || 0) + 1 : p.tournamentWins,
+      };
+    });
+  }
+
+  function applyMatchPoints(playersList, teamsList, match) {
+    if (!match.locked || !match.winnerId || !match.loserId || match.pointsAwarded) {
+      return playersList;
+    }
+
+    let updated = awardTeamPoints(playersList, teamsList, match.winnerId, 10, "win");
+    updated = awardTeamPoints(updated, teamsList, match.loserId, 5, "loss");
+
+    return updated;
+  }
+
   function updateMatchField(matchId, field, value) {
     updateState((prev) => {
       const apply = (arr) =>
-        arr.map((m) => (m.id === matchId ? { ...m, [field]: value } : m));
+        arr.map((m) => {
+          if (m.id !== matchId || m.locked) return m;
+
+          const teamA = prev.tournament.teams.find((t) => t.id === m.teamAId);
+          const isTeamAPlayer = teamA?.members.includes(loggedInPlayer?.id);
+
+          if (!canAdmin && !isTeamAPlayer) return m;
+
+          return {
+            ...m,
+            [field]: value,
+            submittedByTeamA: false,
+            teamBConfirmed: false,
+            winnerId: null,
+            loserId: null,
+            pointsAwarded: false,
+          };
+        });
 
       return {
         ...prev,
@@ -605,7 +681,7 @@ export default function App() {
           activeRedemption: apply(prev.tournament.activeRedemption),
           grandFinal:
             prev.tournament.grandFinal?.id === matchId
-              ? { ...prev.tournament.grandFinal, [field]: value }
+              ? apply([prev.tournament.grandFinal])[0]
               : prev.tournament.grandFinal,
         },
       };
@@ -613,147 +689,333 @@ export default function App() {
   }
 
   function submitByTeamA(matchId) {
-    updateMatchField(matchId, "submittedByTeamA", true);
-  }
-
-  function confirmByTeamB(matchId) {
     updateState((prev) => {
-      function finalize(match) {
-        const scoreA = Number(match.scoreA);
-        const scoreB = Number(match.scoreB);
+      const apply = (arr) =>
+        arr.map((m) => {
+          if (m.id !== matchId || m.locked) return m;
 
-        if (Number.isNaN(scoreA) || Number.isNaN(scoreB)) return match;
+          const teamA = prev.tournament.teams.find((t) => t.id === m.teamAId);
+          const isTeamAPlayer = teamA?.members.includes(loggedInPlayer?.id);
 
-        const winnerId = scoreA > scoreB ? match.teamAId : match.teamBId;
-        const loserId = scoreA > scoreB ? match.teamBId : match.teamAId;
+          if (!canAdmin && !isTeamAPlayer) return m;
 
-        return {
-          ...match,
-          teamBConfirmed: true,
-          locked: true,
-          winnerId,
-          loserId,
-        };
-      }
+          const scoreA = Number(m.scoreA);
+          const scoreB = Number(m.scoreB);
+
+          if (Number.isNaN(scoreA) || Number.isNaN(scoreB) || scoreA === scoreB) {
+            alert("Please enter a valid winning score. Draws are not allowed.");
+            return m;
+          }
+
+          return {
+            ...m,
+            submittedByTeamA: true,
+            teamBConfirmed: false,
+          };
+        });
 
       return {
         ...prev,
         tournament: {
           ...prev.tournament,
-          activeWinners: prev.tournament.activeWinners.map((m) =>
-            m.id === matchId ? finalize(m) : m
-          ),
-          activeRedemption: prev.tournament.activeRedemption.map((m) =>
-            m.id === matchId ? finalize(m) : m
-          ),
+          activeWinners: apply(prev.tournament.activeWinners),
+          activeRedemption: apply(prev.tournament.activeRedemption),
           grandFinal:
             prev.tournament.grandFinal?.id === matchId
-              ? finalize(prev.tournament.grandFinal)
+              ? apply([prev.tournament.grandFinal])[0]
               : prev.tournament.grandFinal,
         },
       };
     });
   }
 
+  function confirmByTeamB(matchId) {
+    updateState((prev) => {
+      const finalize = (match) => {
+        if (match.id !== matchId || match.locked) return match;
+
+        const teamB = prev.tournament.teams.find((t) => t.id === match.teamBId);
+        const isTeamBPlayer = teamB?.members.includes(loggedInPlayer?.id);
+
+        if (!canAdmin && !isTeamBPlayer) return match;
+        if (!match.submittedByTeamA && !canAdmin) return match;
+
+        const scoreA = Number(match.scoreA);
+        const scoreB = Number(match.scoreB);
+
+        if (Number.isNaN(scoreA) || Number.isNaN(scoreB) || scoreA === scoreB) {
+          alert("Please enter a valid winning score. Draws are not allowed.");
+          return match;
+        }
+
+        return {
+          ...match,
+          submittedByTeamA: true,
+          teamBConfirmed: true,
+          locked: true,
+          winnerId: scoreA > scoreB ? match.teamAId : match.teamBId,
+          loserId: scoreA > scoreB ? match.teamBId : match.teamAId,
+        };
+      };
+
+      const activeWinners = prev.tournament.activeWinners.map(finalize);
+      const activeRedemption = prev.tournament.activeRedemption.map(finalize);
+      const grandFinal =
+        prev.tournament.grandFinal?.id === matchId
+          ? finalize(prev.tournament.grandFinal)
+          : prev.tournament.grandFinal;
+
+      let nextPlayers = prev.players;
+
+      [...activeWinners, ...activeRedemption, ...(grandFinal ? [grandFinal] : [])].forEach((match) => {
+        if (match.id === matchId && match.locked && !match.pointsAwarded) {
+          nextPlayers = applyMatchPoints(nextPlayers, prev.tournament.teams, match);
+        }
+      });
+
+      const markPointsAwarded = (arr) =>
+        arr.map((m) =>
+          m.id === matchId && m.locked ? { ...m, pointsAwarded: true } : m
+        );
+
+      const nextTournament = {
+        ...prev.tournament,
+        activeWinners: markPointsAwarded(activeWinners),
+        activeRedemption: markPointsAwarded(activeRedemption),
+        grandFinal:
+          grandFinal?.id === matchId && grandFinal.locked
+            ? { ...grandFinal, pointsAwarded: true }
+            : grandFinal,
+      };
+
+      const advanced = autoAdvanceTournament(nextTournament, nextPlayers);
+
+      return {
+        ...prev,
+        players: advanced.players,
+        tournament: advanced.tournament,
+        championBanner: advanced.championBanner ?? prev.championBanner,
+        hallOfFame: advanced.hallOfFame ?? prev.hallOfFame,
+      };
+    });
+  }
+
+  function autoAdvanceTournament(tournamentData, playersData) {
+    let t = { ...tournamentData };
+    let p = [...playersData];
+    let newChampionBanner = null;
+    let newHallOfFame = null;
+
+    if (t.championTeamId) {
+      return { tournament: t, players: p };
+    }
+
+    if (t.grandFinal && t.grandFinal.locked && t.grandFinal.winnerId) {
+      const championTeam = t.teams.find((team) => team.id === t.grandFinal.winnerId);
+      const secondTeam = t.teams.find((team) => team.id === t.grandFinal.loserId);
+
+      if (!t.placementPointsAwarded) {
+        p = awardTeamPoints(p, t.teams, t.grandFinal.winnerId, 80, "champion");
+        p = awardTeamPoints(p, t.teams, t.grandFinal.loserId, 60, null);
+      }
+
+      newChampionBanner = {
+        teamId: championTeam?.id,
+        teamName: championTeam ? getTeamName(championTeam) : "Champion",
+        createdAt: new Date().toLocaleDateString(),
+      };
+
+      newHallOfFame = [
+        {
+          id: Date.now(),
+          championTeamId: championTeam?.id,
+          championName: championTeam ? getTeamName(championTeam) : "Champion",
+          secondPlaceTeamId: secondTeam?.id,
+          secondPlaceName: secondTeam ? getTeamName(secondTeam) : "Second Place",
+          tournamentTitle: t.title,
+          createdAt: new Date().toLocaleDateString(),
+        },
+        ...(state.hallOfFame || []),
+      ];
+
+      return {
+        tournament: {
+          ...t,
+          completedRounds: [...t.completedRounds, t.grandFinal],
+          grandFinal: null,
+          championTeamId: t.grandFinal.winnerId,
+          status: "Finished",
+          placementPointsAwarded: true,
+        },
+        players: p,
+        championBanner: newChampionBanner,
+        hallOfFame: newHallOfFame,
+      };
+    }
+
+    while (
+      allLocked(t.activeWinners) &&
+      allLocked(t.activeRedemption) &&
+      (t.activeWinners.length > 0 || t.activeRedemption.length > 0)
+    ) {
+      const winnersAdvancing = [
+        ...(t.winnersCarry ? [t.winnersCarry] : []),
+        ...getOfficialWinners(t.activeWinners),
+      ];
+
+      const droppedToRedemption = getOfficialLosers(t.activeWinners);
+
+      const redemptionSurvivors = [
+        ...(t.redemptionCarry ? [t.redemptionCarry] : []),
+        ...getOfficialWinners(t.activeRedemption),
+      ];
+
+      const redemptionEliminated = getOfficialLosers(t.activeRedemption);
+
+      let nextRedemptionPool = [...redemptionSurvivors, ...droppedToRedemption];
+
+      let completed = [
+        ...t.completedRounds,
+        ...t.activeWinners,
+        ...t.activeRedemption,
+      ];
+
+      if (
+        winnersAdvancing.length === 1 &&
+        nextRedemptionPool.length === 1
+      ) {
+        if (redemptionEliminated.length > 0 && !t.thirdPlaceAwarded) {
+          redemptionEliminated.forEach((teamId) => {
+            p = awardTeamPoints(p, t.teams, teamId, 40, null);
+          });
+        }
+
+        const finalMatch = pairTeams(
+          [winnersAdvancing[0], nextRedemptionPool[0]],
+          "GF",
+          1
+        ).matches[0];
+
+        t = {
+          ...t,
+          activeWinners: [],
+          activeRedemption: [],
+          winnersCarry: null,
+          redemptionCarry: null,
+          grandFinal: finalMatch,
+          completedRounds: completed,
+          status: "Grand Final",
+          thirdPlaceAwarded: true,
+        };
+
+        break;
+      }
+
+      if (
+        winnersAdvancing.length === 1 &&
+        nextRedemptionPool.length === 0
+      ) {
+        p = awardTeamPoints(p, t.teams, winnersAdvancing[0], 80, "champion");
+
+        const championTeam = t.teams.find((team) => team.id === winnersAdvancing[0]);
+
+        newChampionBanner = {
+          teamId: championTeam?.id,
+          teamName: championTeam ? getTeamName(championTeam) : "Champion",
+          createdAt: new Date().toLocaleDateString(),
+        };
+
+        newHallOfFame = [
+          {
+            id: Date.now(),
+            championTeamId: championTeam?.id,
+            championName: championTeam ? getTeamName(championTeam) : "Champion",
+            tournamentTitle: t.title,
+            createdAt: new Date().toLocaleDateString(),
+          },
+          ...(state.hallOfFame || []),
+        ];
+
+        t = {
+          ...t,
+          activeWinners: [],
+          activeRedemption: [],
+          winnersCarry: null,
+          redemptionCarry: null,
+          completedRounds: completed,
+          championTeamId: winnersAdvancing[0],
+          status: "Finished",
+          placementPointsAwarded: true,
+        };
+
+        break;
+      }
+
+      const nextWStage = t.winnersStage + 1;
+      const nextLStage = t.redemptionStage + 1;
+
+      const nextWinners =
+        winnersAdvancing.length > 1
+          ? pairTeams(winnersAdvancing, "W", nextWStage)
+          : { matches: [], carry: winnersAdvancing[0] || null };
+
+      const nextRedemption =
+        nextRedemptionPool.length > 1
+          ? pairTeams(nextRedemptionPool, "L", nextLStage)
+          : { matches: [], carry: nextRedemptionPool[0] || null };
+
+      t = {
+        ...t,
+        activeWinners: nextWinners.matches,
+        activeRedemption: nextRedemption.matches,
+        winnersCarry: nextWinners.carry,
+        redemptionCarry: nextRedemption.carry,
+        completedRounds: completed,
+        winnersStage: nextWStage,
+        redemptionStage: nextLStage,
+        status: "Live",
+      };
+    }
+
+    return {
+      tournament: t,
+      players: p,
+      championBanner: newChampionBanner,
+      hallOfFame: newHallOfFame,
+    };
+  }
+
   function advanceBracket() {
     if (!canAdmin) return;
 
     updateState((prev) => {
-      const tournament = prev.tournament;
-
-      const winnersDone = allLocked(tournament.activeWinners);
-      const redemptionDone = allLocked(tournament.activeRedemption);
-
-      if (!winnersDone) return prev;
-
-      const winners = getOfficialWinners(tournament.activeWinners);
-      const losers = getOfficialLosers(tournament.activeWinners);
-
-      const completed = [
-        ...tournament.completedRounds,
-        ...tournament.activeWinners,
-        ...tournament.activeRedemption,
-      ];
-
-      if (winners.length === 1 && losers.length === 1 && redemptionDone) {
-        const grandFinal = {
-          id: `GF-${Date.now()}`,
-          bracket: "GF",
-          stage: 1,
-          label: "Grand Final",
-          teamAId: winners[0],
-          teamBId: losers[0],
-          scoreA: "",
-          scoreB: "",
-          submittedByTeamA: false,
-          teamBConfirmed: false,
-          locked: false,
-          winnerId: null,
-          loserId: null,
-        };
-
-        return {
-          ...prev,
-          tournament: {
-            ...tournament,
-            activeWinners: [],
-            activeRedemption: [],
-            grandFinal,
-            completedRounds: completed,
-          },
-        };
-      }
-
-      const nextWinners = pairTeams(winners, "W", tournament.winnersStage + 1);
-      const nextRedemption = pairTeams(losers, "L", tournament.redemptionStage + 1);
+      const advanced = autoAdvanceTournament(prev.tournament, prev.players);
 
       return {
         ...prev,
-        tournament: {
-          ...tournament,
-          activeWinners: nextWinners.matches,
-          activeRedemption: nextRedemption.matches,
-          winnersCarry: nextWinners.carry,
-          redemptionCarry: nextRedemption.carry,
-          completedRounds: completed,
-          winnersStage: tournament.winnersStage + 1,
-          redemptionStage: tournament.redemptionStage + 1,
-        },
+        players: advanced.players,
+        tournament: advanced.tournament,
+        championBanner: advanced.championBanner ?? prev.championBanner,
+        hallOfFame: advanced.hallOfFame ?? prev.hallOfFame,
       };
     });
   }
 
   function finalizeChampion() {
     if (!canAdmin) return;
-    if (!tournament.grandFinal?.locked) return;
 
-    const championTeam = findTeam(tournament.grandFinal.winnerId);
+    updateState((prev) => {
+      const advanced = autoAdvanceTournament(prev.tournament, prev.players);
 
-    if (!championTeam) return;
-
-    updateState((prev) => ({
-      ...prev,
-      championBanner: {
-        teamId: championTeam.id,
-        teamName: getTeamName(championTeam),
-        createdAt: new Date().toLocaleDateString(),
-      },
-      hallOfFame: [
-        {
-          id: Date.now(),
-          championTeamId: championTeam.id,
-          championName: getTeamName(championTeam),
-          tournamentTitle: prev.tournament.title,
-          createdAt: new Date().toLocaleDateString(),
-        },
-        ...prev.hallOfFame,
-      ],
-      tournament: {
-        ...emptyTournament,
-      },
-    }));
+      return {
+        ...prev,
+        players: advanced.players,
+        tournament: advanced.tournament,
+        championBanner: advanced.championBanner ?? prev.championBanner,
+        hallOfFame: advanced.hallOfFame ?? prev.hallOfFame,
+      };
+    });
   }
-
   function submitCallout() {
     if (!loggedInPlayer) return;
     if (!calloutDraft.challengedId) return;
@@ -1006,8 +1268,8 @@ export default function App() {
   function MatchCard({ match }) {
     const teamA = findTeam(match.teamAId);
     const teamB = findTeam(match.teamBId);
-    const canA = canTeamAEdit(match);
-    const canB = canTeamBConfirm(match);
+    const canA = canAdmin || canTeamAEdit(match);
+    const canB = canAdmin || canTeamBConfirm(match);
 
     return (
       <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.18)" }}>
