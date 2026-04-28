@@ -1079,78 +1079,103 @@ useEffect(() => {
     });
   }
     function applySundayPoints() {
-    if (!canAdmin) return;
+  if (!canAdmin) return;
 
-    const winnerSet = new Set(sundayEntry.winningTeamIds.map(Number));
-    const loserSet = new Set(sundayEntry.losingTeamIds.map(Number));
-    if (!winnerSet.size || !loserSet.size) return;
+  const winnerSet = new Set(sundayEntry.winningTeamIds.map(Number).filter(Boolean));
+  const loserSet = new Set(sundayEntry.losingTeamIds.map(Number).filter(Boolean));
 
-    updateState((prev) => {
-      const updatedPlayers = prev.players.map((p) => {
-        let points = p.points;
-        let wins = p.wins;
-        let losses = p.losses;
-        let mvpPoints = p.mvpPoints;
-        let activityPoints = p.activityPoints;
+  if (!winnerSet.size || !loserSet.size) {
+    alert("Please select winning and losing team players.");
+    return;
+  }
 
-        if (winnerSet.has(p.id)) {
-          points += 10;
-          wins += 1;
-          activityPoints += 1;
-        }
+  updateState((prev) => {
+    const updatedPlayers = prev.players.map((p) => {
+      let points = Number(p.points) || 0;
+      let wins = Number(p.wins) || 0;
+      let losses = Number(p.losses) || 0;
+      let mvpPoints = Number(p.mvpPoints) || 0;
+      let activityPoints = Number(p.activityPoints) || 0;
 
-        if (loserSet.has(p.id)) {
-          points += 5;
-          losses += 1;
-          activityPoints += 1;
-        }
+      const playerId = Number(p.id);
 
-        if (Number(sundayEntry.winningMvpId) === p.id) {
-          points += 10;
-          mvpPoints += 10;
-        }
+      if (winnerSet.has(playerId)) {
+        points += 10;
+        wins += 1;
+        activityPoints += 1;
+      }
 
-        if (Number(sundayEntry.losingMvpId) === p.id) {
-          points += 5;
-          mvpPoints += 5;
-        }
+      if (loserSet.has(playerId)) {
+        points += 5;
+        losses += 1;
+        activityPoints += 1;
+      }
 
-        if (Number(sundayEntry.objectiveLeaderId) === p.id) points += 2;
-        if (Number(sundayEntry.bestKdId) === p.id) points += 2;
-        if (Number(sundayEntry.zeroDeathId) === p.id) points += 5;
-        if (sundayEntry.flawless && winnerSet.has(p.id)) points += 15;
+      if (Number(sundayEntry.winningMvpId) === playerId) {
+        points += 10;
+        mvpPoints += 10;
+      }
 
-        return { ...p, points, wins, losses, mvpPoints, activityPoints };
-      });
+      if (Number(sundayEntry.losingMvpId) === playerId) {
+        points += 5;
+        mvpPoints += 5;
+      }
+
+      if (Number(sundayEntry.objectiveLeaderId) === playerId) {
+        points += 2;
+        activityPoints += 2;
+      }
+
+      if (Number(sundayEntry.bestKdId) === playerId) {
+        points += 2;
+      }
+
+      if (Number(sundayEntry.zeroDeathId) === playerId) {
+        points += 5;
+      }
+
+      if (sundayEntry.flawless && winnerSet.has(playerId)) {
+        points += 15;
+      }
 
       return {
-        ...prev,
-        players: updatedPlayers,
-        sundayHistory: [
-          {
-            id: Date.now(),
-            ...sundayEntry,
-            createdAt: new Date().toLocaleString(),
-          },
-          ...prev.sundayHistory,
-        ],
+        ...p,
+        points,
+        wins,
+        losses,
+        mvpPoints,
+        activityPoints,
       };
     });
 
-    setSundayEntry({
-      mode: "Hardpoint",
-      mapName: "",
-      scoreText: "",
-      winningTeamIds: [],
-      losingTeamIds: [],
-      winningMvpId: "",
-      losingMvpId: "",
-      objectiveLeaderId: "",
-      bestKdId: "",
-      zeroDeathId: "",
-      flawless: false,
-    });
-  }
+    return {
+      ...prev,
+      players: updatedPlayers,
+      sundayHistory: [
+        {
+          id: Date.now(),
+          ...sundayEntry,
+          createdAt: new Date().toLocaleString(),
+        },
+        ...prev.sundayHistory,
+      ],
+    };
+  });
+
+  setSundayEntry({
+    mode: "Hardpoint",
+    mapName: "",
+    scoreText: "",
+    winningTeamIds: [],
+    losingTeamIds: [],
+    winningMvpId: "",
+    losingMvpId: "",
+    objectiveLeaderId: "",
+    bestKdId: "",
+    zeroDeathId: "",
+    flawless: false,
+  });
+}
 
   function vote(optionId) {
     updateState((prev) => ({
