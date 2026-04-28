@@ -467,7 +467,63 @@ useEffect(() => {
 
     updatePlayer(playerId, "avatar", publicUrl);
   }
+   async function uploadBanner(playerId, file) {
+  alert("Banner button worked");
 
+  if (!file) {
+    alert("No file selected");
+    return;
+  }
+
+  alert("File selected: " + file.name);
+
+  const extension = file.name.split(".").pop();
+  const fileName = `banner-${playerId}-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage
+    .from("banners")
+    .upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+  if (error) {
+    alert("Banner upload failed: " + error.message);
+    console.error(error);
+    return;
+  }
+
+  const { data } = supabase.storage.from("banners").getPublicUrl(fileName);
+
+  updatePlayer(playerId, "banner", data.publicUrl);
+
+  alert("Banner uploaded successfully");
+}
+function chooseAvatar(playerId) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    await uploadAvatar(playerId, file);
+  };
+
+  input.click();
+}
+
+function chooseBanner(playerId) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    await uploadBanner(playerId, file);
+  };
+
+  input.click();
+}
   function addPlayer() {
     if (!canAdmin) return;
 
@@ -1202,12 +1258,17 @@ useEffect(() => {
     const canUpload = loggedInPlayer?.id === player.id || canAdmin;
 
     return (
-      <div
-        style={{
-          ...cardStyle(),
-          background: `linear-gradient(135deg, rgba(255,255,255,0.05), ${rank.glow})`,
-        }}
-      >
+  <div
+    style={{
+      ...cardStyle(),
+      position: "relative",
+      overflow: "hidden",
+      background: player.banner
+        ? `linear-gradient(135deg, rgba(10,6,18,0.74), rgba(10,6,18,0.88)), url(${player.banner}) center/cover`
+        : `linear-gradient(135deg, rgba(255,255,255,0.05), ${rank.glow})`,
+    }}
+  >
+      
         <div style={{ display: "grid", gridTemplateColumns: "74px 1fr", gap: 12, alignItems: "center" }}>
           <div style={{ position: "relative" }}>
             <div
@@ -1264,32 +1325,43 @@ useEffect(() => {
             </div>
 
             {canUpload ? (
-              <label
-                style={{
-                  ...buttonStyle(false, false),
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginTop: 10,
-                  fontSize: 13,
-                }}
-              >
-                <Upload size={14} />
-                Upload Avatar
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => uploadAvatar(player.id, e.target.files?.[0])}
-                  style={{ display: "none" }}
-                />
-              </label>
-            ) : null}
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+    <button
+      type="button"
+      onClick={() => chooseAvatar(player.id)}
+      style={{
+        ...buttonStyle(false, false),
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 13,
+      }}
+    >
+      <Upload size={14} />
+      Upload Avatar
+    </button>
+
+    <button
+      type="button"
+      onClick={() => chooseBanner(player.id)}
+      style={{
+        ...buttonStyle(false, false),
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 13,
+      }}
+    >
+      <Upload size={14} />
+      Upload Banner
+    </button>
+  </div>
+) : null}
           </div>
         </div>
       </div>
     );
   }
-
   function MatchCard({ match }) {
     const teamA = findTeam(match.teamAId);
     const teamB = findTeam(match.teamBId);
