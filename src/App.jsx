@@ -560,15 +560,45 @@ function chooseBanner(playerId) {
       role: "player",
     });
   }
-
   function removePlayer(playerId) {
     if (!canAdmin) return;
 
-    updateState((prev) => ({
+     updateState((prev) => ({
       ...prev,
-      players: prev.players.filter((p) => p.id !== playerId),
-    }));
-  }
+    players: prev.players.filter((p) => p.id !== playerId),
+  }));
+}
+
+function resetPlayerStats(playerId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) =>
+      p.id === playerId
+        ? {
+            ...p,
+            points: 0,
+            wins: 0,
+            losses: 0,
+            tournamentWins: 0,
+            mvpPoints: 0,
+            activityPoints: 0,
+          }
+        : p
+    ),
+  }));
+}
+
+function clearPlayerAvatar(playerId) {
+  if (!canAdmin) return;
+  updatePlayer(playerId, "avatar", "");
+}
+
+function clearPlayerBanner(playerId) {
+  if (!canAdmin) return;
+  updatePlayer(playerId, "banner", "");
+}
 
   function createManualTeam() {
     if (!canAdmin) return;
@@ -1357,6 +1387,59 @@ function chooseBanner(playerId) {
     </button>
   </div>
 ) : null}
+
+{canAdmin ? (
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+    <button
+      type="button"
+      onClick={() => {
+        const newName = prompt("New player name:", player.name);
+        if (newName) updatePlayer(player.id, "name", newName);
+      }}
+      style={buttonStyle(false, false)}
+    >
+      Edit Name
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        const newRole = prompt("Role (leader/co-leader/player/scout):", player.role);
+        if (newRole) updatePlayer(player.id, "role", newRole);
+      }}
+      style={buttonStyle(false, false)}
+    >
+      Change Role
+    </button>
+
+    <button type="button" onClick={() => resetPlayerStats(player.id)} style={buttonStyle(false, false)}>
+      Reset Stats
+    </button>
+
+    <button type="button" onClick={() => clearPlayerAvatar(player.id)} style={buttonStyle(false, false)}>
+      Remove Avatar
+    </button>
+
+    <button type="button" onClick={() => clearPlayerBanner(player.id)} style={buttonStyle(false, false)}>
+      Remove Banner
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        if (window.confirm(`Remove ${player.name}?`)) {
+          removePlayer(player.id);
+        }
+      }}
+      style={{
+        ...buttonStyle(false, false),
+        background: "rgba(239,68,68,0.2)",
+      }}
+    >
+      Remove Player
+    </button>
+  </div>
+) : null}
           </div>
         </div>
       </div>
@@ -1570,8 +1653,32 @@ function chooseBanner(playerId) {
   }
 
   if (!loggedInPlayer) {
-    return (
-      <div style={{ ...appBg, display: "grid", placeItems: "center", padding: 20 }}>
+  return (
+    <div
+      style={{
+        ...appBg,
+        display: "grid",
+        placeItems: "center",
+        padding: 20,
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <img
+  src={state.logoUrl || DEFAULT_LOGO}
+  alt="Shadowborn Background"
+  style={{
+    position: "absolute",
+    right: "8%",
+    top: "50%",
+    transform: "translateY(-50%)",
+    width: isMobile ? 260 : 520,
+    opacity: 0.10,
+    filter: "drop-shadow(0 0 80px rgba(168,85,247,0.6))",
+    pointerEvents: "none",
+    zIndex: 0,
+  }}
+/>
         <div
           style={{
             width: 420,
@@ -1579,20 +1686,56 @@ function chooseBanner(playerId) {
             ...cardStyle(),
             textAlign: "center",
             padding: 28,
-          }}
+            position: "relative",
+overflow: "hidden",
+background: `
+  linear-gradient(rgba(12,6,24,0.88), rgba(12,6,24,0.94)),
+  url(${state.logoUrl || DEFAULT_LOGO}) center/70% no-repeat
+  backdropFilter: "blur(18px)",
+border: "1px solid rgba(168,85,247,0.25)",
+boxShadow: 0 0 35px rgba(168,85,247,0.25),
+  inset 0 0 30px rgba(168,85,247,0.08)
+`,
+boxShadow: "0 0 40px rgba(168,85,247,0.35)",
+         }}
         >
-          <img
-            src={state.logoUrl || DEFAULT_LOGO}
-            alt="Shadowborn ZA"
-            style={{
-              width: 140,
-              height: 140,
-              objectFit: "contain",
-              marginBottom: 12,
-            }}
-          />
-
-          <h1 style={{ margin: 0, fontSize: 32 }}>{state.clanName}</h1>
+          <div
+  style={{
+    width: isMobile ? 110 : 150,
+    height: isMobile ? 110 : 150,
+    borderRadius: 32,
+    padding: 8,
+    background:
+      "linear-gradient(135deg, rgba(168,85,247,0.35), rgba(59,130,246,0.18), rgba(0,0,0,0.4))",
+    border: "1px solid rgba(168,85,247,0.55)",
+    boxShadow:
+      "0 0 28px rgba(168,85,247,0.45), 0 0 60px rgba(59,130,246,0.18)",
+    display: "grid",
+    placeItems: "center",
+  }}
+>
+  <img
+    src={state.logoUrl || DEFAULT_LOGO}
+    alt="Shadowborn ZA"
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      borderRadius: 26,
+      filter: "drop-shadow(0 0 18px rgba(168,85,247,0.8))",
+    }}
+  />
+</div>
+          <h1
+  style={{
+    margin: 0,
+    fontSize: isMobile ? 34 : 54,
+    letterSpacing: 1,
+    textShadow: "0 0 18px rgba(168,85,247,0.65)",
+  }}
+>
+  {state.clanName}
+</h1>
           <div style={{ color: "#d6caef", marginTop: 8, marginBottom: 24 }}>
             {state.tagline}
           </div>
