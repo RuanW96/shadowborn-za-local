@@ -212,7 +212,65 @@ function getOfficialWinners(matches) {
 function getOfficialLosers(matches) {
   return matches.filter((m) => m.locked && m.loserId).map((m) => m.loserId);
 }
+function LeaderboardCard({ player, index }) {
+  const rank = getRank(player.points);
 
+  return (
+    <div
+      style={{
+        borderRadius: 18,
+        overflow: "hidden",
+        marginBottom: 14,
+        border: `1px solid ${rank.color}`,
+        background: "rgba(255,255,255,0.05)",
+      }}
+    >
+      <div
+        style={{
+          minHeight: 220,
+          backgroundImage: `linear-gradient(90deg, rgba(10,6,18,0.92), rgba(10,6,18,0.62), rgba(10,6,18,0.35)), url(${player.banner || "/shadowborn-za-logo.jpg"})`,
+          backgroundSize: "110%",
+          backgroundPosition: "center",
+          padding: 18,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          
+          <img
+            src={player.avatar || "/shadowborn-za-logo.jpg"}
+            alt={player.name}
+            style={{
+              width: 82,
+              height: 82,
+              borderRadius: 18,
+              objectFit: "cover",
+              border: `2px solid ${rank.color}`,
+              boxShadow: `0 0 22px ${rank.glow}`,
+              background: "#111",
+            }}
+          />
+
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 26 }}>
+              #{index + 1} {player.name}
+            </div>
+
+            <div style={{ color: rank.color, fontWeight: 800, marginTop: 4 }}>
+              {rank.name}
+            </div>
+
+            <div style={{ marginTop: 6, color: "#e9ddff", fontWeight: 700 }}>
+              {player.points} pts • W {player.wins} / L {player.losses} • Tournament Wins {player.tournamentWins}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function App() {
   const [state, setState] = useState(defaultState);
   const [loading, setLoading] = useState(true);
@@ -1874,7 +1932,7 @@ const pendingCallout = state.callouts?.find(
 );
   return (
     <div style={appBg}>
-      <div style={{ maxWidth: 1480, margin: "0 auto", padding: 20 }}>
+      <div style={{ maxWidth: 1800, margin: "0 auto", padding: 20 }}>
        {pendingCallout && (
   <div
     style={{
@@ -2082,21 +2140,9 @@ const pendingCallout = state.callouts?.find(
       </button>
     ) : null}
           
-            {sortedPlayers.map((player, index) => (
-              <div key={player.id} style={{ ...cardStyle(), padding: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "80px 1.1fr repeat(4, 120px)", gap: 12, alignItems: "center" }}>
-                  <div style={{ fontWeight: 900, fontSize: 22 }}>#{index + 1}</div>
-                  <div>
-                    <div style={{ fontWeight: 800 }}>{player.name}</div>
-                    <div style={{ color: "#d5caec", fontSize: 13 }}>{getRank(player.points).name}</div>
-                  </div>
-                  <input type="number" value={player.points} onChange={(e) => updatePlayer(player.id, "points", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
-                  <input type="number" value={player.tournamentWins} onChange={(e) => updatePlayer(player.id, "tournamentWins", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
-                  <input type="number" value={player.wins} onChange={(e) => updatePlayer(player.id, "wins", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
-                  <input type="number" value={player.losses} onChange={(e) => updatePlayer(player.id, "losses", e.target.value)} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
-                </div>
-              </div>
-            ))}
+         {sortedPlayers.map((player, index) => (
+  <LeaderboardCard key={player.id} player={player} index={index} />
+))}   
           </div>
         )}
 
