@@ -44,16 +44,31 @@ return `${medal} **${player.name}** — ${flame} ${points} pts`;
       .join("\n");
 
     const payload = {
-      username: "Shadowborn ZA",
-      embeds: [
-        {
-          title: "🔥 Leaderboard Update",
-          description: description,
-          color: 16711680,
-          timestamp: new Date().toISOString()
-        }
-      ]
-    };
+  username: "Shadowborn ZA",
+  embeds: [
+    {
+      title: "🏆 Shadowborn ZA Leaderboard",
+      description: description,
+      color: 0x7c3aed, // purple theme
+      thumbnail: {
+        url: "https://shadowborn-za-local.vercel.app/shadowborn-za-logo.jpg"
+      },
+      footer: {
+        text: "Shadowborn ZA • Competitive Ranking"
+      },
+      timestamp: new Date().toISOString()
+    }
+  ]
+};
+      
+        
+          
+          
+        
+          
+        
+      
+    
 
     const discordResponse = await fetch(webhookUrl, {
       method: "POST",
