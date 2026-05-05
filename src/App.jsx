@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 999;
+const STORAGE_ROW_ID = 1;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
