@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 1;
+const STORAGE_ROW_ID = 999;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
@@ -1262,7 +1262,32 @@ function clearPlayerBanner(playerId) {
     flawless: false,
   });
 }
+async function postLeaderboardToDiscord() {
+  if (!canAdmin) return;
 
+  try {
+    const response = await fetch("/api/post-discord-leaderboard", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        leaderboard: sortedPlayers,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert("Discord post failed: " + (result.error || "Unknown error"));
+      return;
+    }
+
+    alert("Leaderboard posted to Discord successfully!");
+  } catch (error) {
+    alert("Discord post failed: " + error.message);
+  }
+}
   function vote(optionId) {
     updateState((prev) => ({
       ...prev,
@@ -1947,7 +1972,22 @@ boxShadow: "0 0 40px rgba(168,85,247,0.35)",
         )}
 
         {tab === "leaderboard" && (
-          <div style={{ display: "grid", gap: 12 }}>
+  <div style={{ display: "grid", gap: 12 }}>
+    
+    {canAdmin ? (
+      <button
+        type="button"
+        onClick={postLeaderboardToDiscord}
+        style={{
+          ...buttonStyle(true, false),
+          background: "linear-gradient(135deg, #7f1d1d, #dc2626)",
+          marginBottom: 8,
+        }}
+      >
+        <MessageCircle size={14} /> Post Leaderboard to Discord
+      </button>
+    ) : null}
+          
             {sortedPlayers.map((player, index) => (
               <div key={player.id} style={{ ...cardStyle(), padding: 14 }}>
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "80px 1.1fr repeat(4, 120px)", gap: 12, alignItems: "center" }}>
