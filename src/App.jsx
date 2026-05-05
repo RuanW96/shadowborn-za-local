@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 999;
+const STORAGE_ROW_ID = 1;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
@@ -235,10 +235,8 @@ export default function App() {
   });
 
   const [calloutDraft, setCalloutDraft] = useState({
-    challengedId: "",
-    scoreA: "",
-    scoreB: "",
-  });
+  challengedId: "",
+});
 
   const [sundayEntry, setSundayEntry] = useState({
     mode: "Hardpoint",
@@ -1103,67 +1101,118 @@ function clearPlayerBanner(playerId) {
     });
   }
   function submitCallout() {
-    if (!loggedInPlayer) return;
-    if (!calloutDraft.challengedId) return;
+  if (!loggedInPlayer) return;
+  if (!calloutDraft.challengedId) return;
 
-    const challengerIndex = sortedPlayers.findIndex((p) => p.id === loggedInPlayer.id);
-    const challengedIndex = sortedPlayers.findIndex((p) => p.id === Number(calloutDraft.challengedId));
+  const challengerIndex = sortedPlayers.findIndex((p) => p.id === loggedInPlayer.id);
+  const challengedIndex = sortedPlayers.findIndex((p) => p.id === Number(calloutDraft.challengedId));
+  const distance = Math.abs(challengerIndex - challengedIndex);
 
-    const distance = Math.abs(challengerIndex - challengedIndex);
+  if (distance > 2 || distance === 0) {
+    alert("You may only call out players within 2 positions above or below.");
+    return;
+  }
 
-    if (distance > 2 || distance === 0) {
-      alert("You may only call out players within 2 positions above or below.");
-      return;
+  updateState((prev) => ({
+    ...prev,
+    callouts: [
+      {
+        id: Date.now(),
+        challengerId: loggedInPlayer.id,
+        challengedId: Number(calloutDraft.challengedId),
+        scoreA: "",
+        scoreB: "",
+        status: "pending",
+        accepted: false,
+        confirmed: false,
+        winnerId: null,
+        loserId: null,
+        createdAt: new Date().toLocaleDateString(),
+      },
+      ...prev.callouts,
+    ],
+  }));
+
+  setCalloutDraft({ challengedId: "" });
+}
+
+function acceptCallout(calloutId) {
+  updateState((prev) => ({
+    ...prev,
+    callouts: prev.callouts.map((c) =>
+      c.id === calloutId ? { ...c, status: "accepted", accepted: true } : c
+    ),
+  }));
+
+  setTab("callouts");
+}
+
+function forfeitCallout(calloutId) {
+  updateState((prev) => {
+    const callout = prev.callouts.find((c) => c.id === calloutId);
+    if (!callout || callout.status !== "pending") return prev;
+
+    return {
+      ...prev,
+      players: prev.players.map((p) => {
+  if (p.id === callout.challengerId) {
+    return { ...p, points: Number(p.points || 0) + 10 };
+  }
+  if (p.id === callout.challengedId) {
+    return { ...p, points: Number(p.points || 0) - 10 };
+  }
+  return p;
+}),
+      callouts: prev.callouts.map((c) =>
+        c.id === calloutId
+          ? { ...c, status: "forfeit", confirmed: true }
+          : c
+      ),
+    };
+  });
+
+  setTab("callouts");
+}
+function deleteCallout(calloutId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    callouts: prev.callouts.filter((c) => c.id !== calloutId),
+  }));
+}
+function confirmCallout(calloutId) {
+  updateState((prev) => {
+    const callout = prev.callouts.find((c) => c.id === calloutId);
+
+    if (!callout || callout.confirmed || callout.status !== "accepted") return prev;
+
+    const scoreA = Number(callout.scoreA);
+    const scoreB = Number(callout.scoreB);
+
+    if (Number.isNaN(scoreA) || Number.isNaN(scoreB) || scoreA === scoreB) {
+      alert("Please enter a valid winning score. Draws are not allowed.");
+      return prev;
     }
 
-    updateState((prev) => ({
+    const winnerId = scoreA > scoreB ? callout.challengerId : callout.challengedId;
+    const loserId = scoreA > scoreB ? callout.challengedId : callout.challengerId;
+
+    return {
       ...prev,
-      callouts: [
-        {
-          id: Date.now(),
-          challengerId: loggedInPlayer.id,
-          challengedId: Number(calloutDraft.challengedId),
-          scoreA: calloutDraft.scoreA,
-          scoreB: calloutDraft.scoreB,
-          confirmed: false,
-          createdAt: new Date().toLocaleDateString(),
-        },
-        ...prev.callouts,
-      ],
-    }));
-
-    setCalloutDraft({
-      challengedId: "",
-      scoreA: "",
-      scoreB: "",
-    });
-  }
-
-  function confirmCallout(calloutId) {
-    updateState((prev) => {
-      const callout = prev.callouts.find((c) => c.id === calloutId);
-
-      if (!callout || callout.confirmed) return prev;
-
-      const scoreA = Number(callout.scoreA);
-      const scoreB = Number(callout.scoreB);
-
-      const winnerId = scoreA > scoreB ? callout.challengerId : callout.challengedId;
-      const loserId = scoreA > scoreB ? callout.challengedId : callout.challengerId;
-
-      return {
-        ...prev,
-        callouts: prev.callouts.map((c) =>
-          c.id === calloutId ? { ...c, confirmed: true } : c
-        ),
-        players: prev.players.map((p) => {
-          if (p.id === winnerId) return { ...p, points: p.points + 10 };
-          if (p.id === loserId) return { ...p, points: p.points - 10 };
-          return p;
-        }),
-      };
-    });
-  }
+      callouts: prev.callouts.map((c) =>
+        c.id === calloutId
+          ? { ...c, confirmed: true, status: "confirmed", winnerId, loserId }
+          : c
+      ),
+      players: prev.players.map((p) => {
+        if (p.id === winnerId) return { ...p, points: Number(p.points || 0) + 10 };
+        if (p.id === loserId) return { ...p, points: Number(p.points || 0) - 10 };
+        return p;
+      }),
+    };
+  });
+}
     function applySundayPoints() {
   if (!canAdmin) return;
 
@@ -1818,10 +1867,55 @@ boxShadow: "0 0 40px rgba(168,85,247,0.35)",
       </div>
     );
   }
-
+const pendingCallout = state.callouts?.find(
+  (c) =>
+    c.challengedId === loggedInPlayer?.id &&
+    c.status === "pending"
+);
   return (
     <div style={appBg}>
       <div style={{ maxWidth: 1480, margin: "0 auto", padding: 20 }}>
+       {pendingCallout && (
+  <div
+    style={{
+      background: "linear-gradient(135deg, #7f1d1d, #dc2626)",
+      padding: 16,
+      borderRadius: 14,
+      marginBottom: 16,
+      fontWeight: 900,
+      textAlign: "center",
+      boxShadow: "0 0 20px rgba(220,38,38,0.6)",
+    }}
+  >
+    ⚠️ YOU HAVE BEEN CALLED OUT ⚠️
+
+    <div style={{ fontSize: 16, marginTop: 6 }}>
+      {
+        sortedPlayers.find(p => p.id === pendingCallout.challengerId)?.name
+      } has called you out.
+    </div>
+
+    <div style={{ fontSize: 13, marginTop: 4 }}>
+      Accept the challenge or forfeit the match.
+    </div>
+
+    <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 10 }}>
+      <button
+        onClick={() => acceptCallout(pendingCallout.id)}
+        style={buttonStyle(true, false)}
+      >
+        Accept Call-out
+      </button>
+
+      <button
+        onClick={() => forfeitCallout(pendingCallout.id)}
+        style={buttonStyle(false, false)}
+      >
+        Forfeit
+      </button>
+    </div>
+  </div>
+)}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
           <div style={{ color: "#a78bfa" }}>
             Logged in as <strong>{loggedInPlayer.name}</strong> • {loggedInPlayer.role}
@@ -2066,45 +2160,136 @@ boxShadow: "0 0 40px rgba(168,85,247,0.35)",
                   ))}
               </select>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                <input placeholder="Your score" value={calloutDraft.scoreA} onChange={(e) => setCalloutDraft({ ...calloutDraft, scoreA: e.target.value })} style={inputStyle(false)} />
-                <input placeholder="Opponent score" value={calloutDraft.scoreB} onChange={(e) => setCalloutDraft({ ...calloutDraft, scoreB: e.target.value })} style={inputStyle(false)} />
-              </div>
-
               <button onClick={submitCallout} style={buttonStyle(true, false)}>Submit Call-out</button>
             </div>
-
+            
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Call-out History</h2>
               {state.callouts.length === 0 ? (
-                <div style={{ color: "#d6caef" }}>No call-outs yet.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {state.callouts.map((c) => {
-                    const challenger = players.find((p) => p.id === c.challengerId);
-                    const challenged = players.find((p) => p.id === c.challengedId);
-                    const canConfirm = loggedInPlayer?.id === c.challengedId && !c.confirmed;
+  <div style={{ color: "#d6caef" }}>No call-outs yet.</div>
+) : (
+  <div style={{ display: "grid", gap: 12 }}>
+    {state.callouts.map((c) => {
+      const challenger = players.find((p) => p.id === c.challengerId);
+      const challenged = players.find((p) => p.id === c.challengedId);
+      const canEnterResult =
+        c.status === "accepted" &&
+        !c.confirmed &&
+        (loggedInPlayer?.id === c.challengerId || loggedInPlayer?.id === c.challengedId || canAdmin);
 
-                    return (
-                      <div key={c.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
-                        <div style={{ fontWeight: 800 }}>{challenger?.name} vs {challenged?.name}</div>
-                        <div style={{ color: "#d6caef", marginTop: 4 }}>Score: {c.scoreA} - {c.scoreB}</div>
-                        <div style={{ marginTop: 8 }}>
-                          <span style={badgeStyle(c.confirmed ? "rgba(34,197,94,0.18)" : "rgba(255,255,255,0.08)", c.confirmed ? "#86efac" : "white")}>
-                            {c.confirmed ? "Confirmed" : "Pending"}
-                          </span>
-                        </div>
+      return (
+        <div key={c.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
+          <div style={{ fontWeight: 800 }}>
+            {challenger?.name} vs {challenged?.name}
+          </div>
 
-                        {canConfirm ? (
-                          <button onClick={() => confirmCallout(c.id)} style={{ ...buttonStyle(true, false), marginTop: 10 }}>
-                            Confirm Result
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
+          <div style={{ color: "#d6caef", marginTop: 4 }}>
+            Score: {c.scoreA || "-"} - {c.scoreB || "-"}
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <span
+              style={badgeStyle(
+                c.status === "forfeit"
+                  ? "rgba(239,68,68,0.22)"
+                  : c.confirmed
+                  ? "rgba(34,197,94,0.18)"
+                  : c.status === "accepted"
+                  ? "rgba(59,130,246,0.18)"
+                  : "rgba(255,255,255,0.08)",
+                c.status === "forfeit"
+                  ? "#fca5a5"
+                  : c.confirmed
+                  ? "#86efac"
+                  : c.status === "accepted"
+                  ? "#93c5fd"
+                  : "white"
               )}
+            >
+              {c.status === "forfeit"
+                ? "Forfeit"
+                : c.confirmed
+                ? "Confirmed"
+                : c.status === "accepted"
+                ? "Accepted"
+                : "Pending"}
+            </span>
+          </div>
+{canAdmin && !c.confirmed && c.status !== "accepted" && c.status !== "forfeit" && (
+  <button
+    type="button"
+    onClick={() => deleteCallout(c.id)}
+    style={{
+      ...buttonStyle(false, false),
+      background: "rgba(239,68,68,0.22)",
+      marginTop: 10,
+    }}
+  >
+    Delete Pending Call-out
+  </button>
+)}
+          {canEnterResult ? (
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <input
+                  type="number"
+                  placeholder={`${challenger?.name} score`}
+                  value={c.scoreA || ""}
+                  onChange={(e) =>
+                    updateState((prev) => ({
+                      ...prev,
+                      callouts: prev.callouts.map((item) =>
+                        item.id === c.id ? { ...item, scoreA: e.target.value } : item
+                      ),
+                    }))
+                  }
+                  style={inputStyle(false)}
+                />
+
+                <input
+                  type="number"
+                  placeholder={`${challenged?.name} score`}
+                  value={c.scoreB || ""}
+                  onChange={(e) =>
+                    updateState((prev) => ({
+                      ...prev,
+                      callouts: prev.callouts.map((item) =>
+                        item.id === c.id ? { ...item, scoreB: e.target.value } : item
+                      ),
+                    }))
+                  }
+                  style={inputStyle(false)}
+                />
+              </div>
+
+              <button onClick={() => confirmCallout(c.id)} style={buttonStyle(true, false)}>
+                Confirm Result
+              </button>
+            </div>
+          ) : null}
+
+          {canAdmin && c.status === "pending" ? (
+            <button
+              onClick={() =>
+                updateState((prev) => ({
+                  ...prev,
+                  callouts: prev.callouts.filter((item) => item.id !== c.id),
+                }))
+              }
+              style={{
+                ...buttonStyle(false, false),
+                background: "rgba(239,68,68,0.2)",
+                marginTop: 10,
+              }}
+            >
+              Delete Pending Call-out
+            </button>
+          ) : null}
+        </div>
+      );
+    })}
+  </div>
+)}
             </div>
           </div>
         )}
@@ -2333,5 +2518,5 @@ boxShadow: "0 0 40px rgba(168,85,247,0.35)",
         )}
       </div>
     </div>
-  );
+  )
 }
