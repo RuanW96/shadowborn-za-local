@@ -29,7 +29,16 @@ export default async function handler(req, res) {
           index === 2 ? "🥉" :
           `#${index + 1}`;
 
-        return `${medal} ${player.name} - ${player.points || 0} pts`;
+        const points = Number(player.points || 0);
+
+const flame =
+  points >= 601 ? "🔥🔴" :
+  points >= 301 ? "🔥🟠" :
+  points >= 161 ? "🔥🟣" :
+  points >= 101 ? "🔥🔵" :
+  "🔥⚪";
+
+return `${medal} **${player.name}** — ${flame} ${points} pts`;
       })
       .join("\n");
 
