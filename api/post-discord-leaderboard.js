@@ -18,8 +18,9 @@ export default async function handler(req, res) {
 
     // Sort players by points
     const sorted = leaderboard
-      .sort((a, b) => Number(b.points || 0) - Number(a.points || 0))
-      .slice(0, 10);
+  .sort((a, b) => Number(b.points || 0) - Number(a.points || 0));
+      
+      
 
     const description = sorted
       .map((player, index) => {
