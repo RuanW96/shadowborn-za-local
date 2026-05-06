@@ -28,14 +28,25 @@ const challenged = body.challengedName || body.challenged || "Unknown";
 
     const discordBody = {
       embeds: [
-        {
-          title: "⚔️ SHADOWBORN CALLOUT ⚔️",
-          description:
-            `🔥 **${challenger}** has called out **${challenged}**!\n\n` +
-            `💀 Accept the challenge or forfeit your honour.`,
-          color: 16724787
-        }
-      ]
+  {
+    title: "☠️ SHADOWBORN CHALLENGE ISSUED ☠️",
+    description:
+      `🔥 **${challengerName}** has publicly called out **${challengedName}**!\n\n` +
+      `⚔️ A ranked duel has been demanded.\n` +
+      `💀 Accept the challenge... or let the clan witness your silence.\n\n` +
+      `🩸 Reputation is on the line.`,
+    color: 0xff0000,
+    thumbnail: {
+      url: "https://shadowborn-za-local.vercel.app/logo.png"
+    },
+    image: {
+      url: "https://media.tenor.com/6ZUs58774IgAAAAC/fire.gif"
+    },
+    footer: {
+      text: "Shadowborn ZA • Fear the Call-out System"
+    }
+  }
+]
     };
 
     const discordRes = await fetch(webhook, {
