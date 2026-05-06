@@ -1213,6 +1213,7 @@ function clearPlayerBanner(playerId) {
       ...prev.callouts,
     ],
   }));
+  alert("Submit callout reached webhook");
 fetch("/api/post-discord-callout", {
   method: "POST",
   headers: {
