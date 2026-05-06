@@ -1235,6 +1235,7 @@ fetch("/api/post-discord-callout", {
   .catch((error) => {
     alert("Discord callout error: " + error.message);
   });
+  setCalloutDraft({ challengedId: "" });
 }
 
 function acceptCallout(calloutId) {
