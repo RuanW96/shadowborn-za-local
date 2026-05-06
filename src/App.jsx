@@ -1223,8 +1223,18 @@ fetch("/api/post-discord-callout", {
     challengedName:
       players.find((p) => p.id === Number(calloutDraft.challengedId))?.name || "Unknown",
   }),
-}).catch(console.error);
-  setCalloutDraft({ challengedId: "" });
+})
+  .then(async (res) => {
+    const data = await res.json();
+    if (!res.ok) {
+      alert("Discord callout failed: " + (data.error || "Unknown error"));
+    } else {
+      alert("Discord callout sent!");
+    }
+  })
+  .catch((error) => {
+    alert("Discord callout error: " + error.message);
+  });
 }
 
 function acceptCallout(calloutId) {
