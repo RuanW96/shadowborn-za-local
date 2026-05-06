@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 1;
+const STORAGE_ROW_ID = 999;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
@@ -1213,7 +1213,17 @@ function clearPlayerBanner(playerId) {
       ...prev.callouts,
     ],
   }));
-
+fetch("/api/post-discord-callout", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    challengerName: loggedInPlayer.name,
+    challengedName:
+      players.find((p) => p.id === Number(calloutDraft.challengedId))?.name || "Unknown",
+  }),
+}).catch(console.error);
   setCalloutDraft({ challengedId: "" });
 }
 
