@@ -23,8 +23,8 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
 
-    const challenger = body.challenger || "Unknown";
-    const challenged = body.challenged || "Unknown";
+    const challenger = body.challengerName || body.challenger || "Unknown";
+const challenged = body.challengedName || body.challenged || "Unknown";
 
     const discordBody = {
       embeds: [
