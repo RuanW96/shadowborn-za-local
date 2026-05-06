@@ -99,11 +99,17 @@ const defaultState = {
   poll: {
     question: "What should we play next?",
     options: [
-      { id: 1, label: "1v1 Tournament", votes: 0 },
-      { id: 2, label: "2v2 Tournament", votes: 0 },
-      { id: 3, label: "4v4 Tournament", votes: 0 },
-      { id: 4, label: "Sunday Point Match", votes: 0 },
-    ],
+  { id: 1, label: "1v1 SND", votes: 0 },
+  { id: 2, label: "1v1 Hardpoint", votes: 0 },
+  { id: 3, label: "1v1 Overload", votes: 0 },
+  { id: 4, label: "2v2 SND", votes: 0 },
+  { id: 5, label: "2v2 Hardpoint", votes: 0 },
+  { id: 6, label: "2v2 Overload", votes: 0 },
+  { id: 7, label: "4v4 SND", votes: 0 },
+  { id: 8, label: "4v4 Hardpoint", votes: 0 },
+  { id: 9, label: "4v4 Overload", votes: 0 },
+],
+       
   },
   sundayHistory: [],
 };
@@ -217,6 +223,7 @@ function getOfficialLosers(matches) {
 }
 function LeaderboardCard({ player, index }) {
   const rank = getRank(player.points);
+  const isMainSlayer = index < 4;
 
   return (
     <div
@@ -224,7 +231,11 @@ function LeaderboardCard({ player, index }) {
         borderRadius: 18,
         overflow: "hidden",
         marginBottom: 14,
-        border: `1px solid ${rank.color}`,
+        border: isMainSlayer ? "2px solid #facc15" : `1px solid ${rank.color}`,
+boxShadow: isMainSlayer
+  ? "0 0 18px rgba(250,204,21,0.45), 0 0 38px rgba(249,115,22,0.35)"
+  : `0 0 14px ${rank.glow}`,
+animation: isMainSlayer ? "slayerGlow 2s infinite alternate" : "none",
         background: "rgba(255,255,255,0.05)",
       }}
     >
@@ -263,6 +274,12 @@ function LeaderboardCard({ player, index }) {
             <div style={{ color: rank.color, fontWeight: 800, marginTop: 4 }}>
               {rank.name}
             </div>
+
+            {isMainSlayer && (
+  <div style={{ color: "#facc15", fontWeight: 900, marginTop: 4 }}>
+    🔥 MAIN SLAYER
+  </div>
+)}
 
             <div style={{ marginTop: 6, color: "#e9ddff", fontWeight: 700 }}>
               {player.points} pts • W {player.wins} / L {player.losses} • Tournament Wins {player.tournamentWins}
@@ -349,6 +366,7 @@ useEffect(() => {
           hallOfFame: data.data.hallOfFame || prev.hallOfFame,
           callouts: data.data.callouts || prev.callouts,
           championBanner: data.data.championBanner || prev.championBanner,
+          poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
         };
       });
     }
@@ -385,6 +403,7 @@ useEffect(() => {
         tournament: { ...emptyTournament, ...(data.data.tournament || {}) },
         hallOfFame: data.data.hallOfFame || [],
         callouts: data.data.callouts || [],
+        poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
       });
     } else {
       await supabase
@@ -1410,7 +1429,27 @@ async function postLeaderboardToDiscord() {
       },
     }));
   }
+const glowStyles = `
+@keyframes slayerGlow {
+  0% {
+    box-shadow:
+      0 0 12px rgba(250,204,21,0.35),
+      0 0 24px rgba(249,115,22,0.25);
+  }
 
+  50% {
+    box-shadow:
+      0 0 24px rgba(250,204,21,0.65),
+      0 0 48px rgba(249,115,22,0.45);
+  }
+
+  100% {
+    box-shadow:
+      0 0 16px rgba(250,204,21,0.45),
+      0 0 36px rgba(249,115,22,0.35);
+  }
+}
+`;
   const appBg = {
     minHeight: "100vh",
     background:
@@ -1936,6 +1975,7 @@ const pendingCallout = state.callouts?.find(
 );
   return (
     <div style={appBg}>
+    <style>{glowStyles}</style>
       <div style={{ maxWidth: 1800, margin: "0 auto", padding: 20 }}>
        {pendingCallout && (
   <div
