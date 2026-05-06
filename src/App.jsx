@@ -1182,6 +1182,7 @@ function clearPlayerBanner(playerId) {
     });
   }
   function submitCallout() {
+    alert("submitCallout function started");
   if (!loggedInPlayer) return;
   if (!calloutDraft.challengedId) return;
 
