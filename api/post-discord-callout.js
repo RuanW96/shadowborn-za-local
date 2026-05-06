@@ -31,7 +31,7 @@ const challenged = body.challengedName || body.challenged || "Unknown";
   {
     title: "☠️ SHADOWBORN CHALLENGE ISSUED ☠️",
     description:
-      `🔥 **${challengerName}** has publicly called out **${challengedName}**!\n\n` +
+      `🔥 **${challenger}** has publicly called out **${challenged}**!\n\n` +
       `⚔️ A ranked duel has been demanded.\n` +
       `💀 Accept the challenge... or let the clan witness your silence.\n\n` +
       `🩸 Reputation is on the line.`,
