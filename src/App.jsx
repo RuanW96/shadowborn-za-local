@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Menu,
+  X,
+  Home,
   Trophy,
   Users,
   Swords,
@@ -278,6 +281,7 @@ export default function App() {
   const [saveTimer, setSaveTimer] = useState(null);
   const [auth, setAuth] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2043,23 +2047,125 @@ const pendingCallout = state.callouts?.find(
           </div>
         ) : null}
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-          {[
-            ["dashboard", "Dashboard"],
-            ["leaderboard", "Leaderboard"],
-            ["players", "Players"],
-            ["callouts", "Call-outs"],
-            ["tournament", "Tournament"],
-            ["bracket", "Bracket"],
-            ["hall", "Hall of Fame"],
-            ["sunday", "Sunday Points"],
-            ["vote", "Vote"],
-          ].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)} style={buttonStyle(tab === key, false)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <>
+  {/* Top Menu Button */}
+  <div style={{ marginBottom: 20 }}>
+    <button
+      type="button"
+      onClick={() => setMenuOpen(true)}
+      style={{
+        ...buttonStyle(true, false),
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <Menu size={18} />
+      Menu
+    </button>
+  </div>
+
+  {/* Dark Overlay */}
+  {menuOpen && (
+    <div
+      onClick={() => setMenuOpen(false)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        zIndex: 98,
+      }}
+    />
+  )}
+
+  {/* Slide Menu */}
+  <div
+    style={{
+      position: "fixed",
+      top: 0,
+      left: menuOpen ? 0 : -320,
+      width: 280,
+      height: "100vh",
+      background: "#12091d",
+      borderRight: "1px solid rgba(255,255,255,0.08)",
+      padding: 20,
+      zIndex: 99,
+      transition: "left 0.25s ease",
+      boxShadow: "0 0 40px rgba(0,0,0,0.45)",
+      overflowY: "auto",
+    }}
+  >
+    {/* Header */}
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 24,
+      }}
+    >
+      <div style={{ fontWeight: 900, fontSize: 20 }}>
+        Shadowborn ZA
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setMenuOpen(false)}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "white",
+          cursor: "pointer",
+        }}
+      >
+        <X size={22} />
+      </button>
+    </div>
+
+    {/* Menu Items */}
+    {[
+      ["dashboard", "Dashboard", <Home size={18} />],
+      ["leaderboard", "Leaderboard", <Trophy size={18} />],
+      ["players", "Players", <Users size={18} />],
+      ["callouts", "Call-outs", <Swords size={18} />],
+      ["tournament", "Tournament", <Crown size={18} />],
+      ["bracket", "Bracket", <Flame size={18} />],
+      ["hall", "Hall of Fame", <Star size={18} />],
+      ["sunday", "Sunday Points", <Flame size={18} />],
+      ["vote", "Vote", <Crown size={18} />],
+    ].map(([key, label, icon]) => (
+      <button
+        key={key}
+        type="button"
+        onClick={() => {
+          setTab(key);
+          setMenuOpen(false);
+        }}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px",
+          marginBottom: 8,
+          borderRadius: 14,
+          border: "none",
+          background:
+            tab === key
+              ? "linear-gradient(135deg, #7c3aed, #a855f7)"
+              : "rgba(255,255,255,0.04)",
+          color: "white",
+          fontWeight: 800,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        {icon}
+        {label}
+      </button>
+    ))}
+  </div>
+</>
 
         {tab === "dashboard" && (
           <>
