@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 1;
+const STORAGE_ROW_ID = 999;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
 
@@ -111,6 +111,7 @@ const defaultState = {
 ],
        
   },
+  recommendations: [],
   sundayHistory: [],
 };
 
@@ -331,12 +332,30 @@ export default function App() {
     flawless: false,
   });
 
+  const [recommendationDraft, setRecommendationDraft] = useState({
+    title: "",
+    description: "",
+    category: "General",
+  });
+
+
   const players = state.players || [];
   const tournament = state.tournament || emptyTournament;
 
   const sortedPlayers = useMemo(
     () => [...players].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
     [players]
+  );
+
+
+  const sortedRecommendations = useMemo(
+    () => [...(state.recommendations || [])].sort(
+      (a, b) =>
+        Number(b.pinned || false) - Number(a.pinned || false) ||
+        (Number(b.votes || 0) - Number(a.votes || 0)) ||
+        (Number(b.id || 0) - Number(a.id || 0))
+    ),
+    [state.recommendations]
   );
 
   const loggedInPlayer = auth ? players.find((p) => p.id === auth.playerId) : null;
@@ -365,6 +384,7 @@ useEffect(() => {
           tournament: data.data.tournament || prev.tournament,
           hallOfFame: data.data.hallOfFame || prev.hallOfFame,
           callouts: data.data.callouts || prev.callouts,
+          recommendations: data.data.recommendations || prev.recommendations || [],
           championBanner: data.data.championBanner || prev.championBanner,
           poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
         };
@@ -403,6 +423,7 @@ useEffect(() => {
         tournament: { ...emptyTournament, ...(data.data.tournament || {}) },
         hallOfFame: data.data.hallOfFame || [],
         callouts: data.data.callouts || [],
+        recommendations: data.data.recommendations || [],
         poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
       });
     } else {
@@ -1182,10 +1203,10 @@ function clearPlayerBanner(playerId) {
     });
   }
   function submitCallout() {
-    alert("submitCallout function started");
   if (!loggedInPlayer) return;
   if (!calloutDraft.challengedId) return;
 
+  const challengedPlayer = players.find((p) => p.id === Number(calloutDraft.challengedId));
   const challengerIndex = sortedPlayers.findIndex((p) => p.id === loggedInPlayer.id);
   const challengedIndex = sortedPlayers.findIndex((p) => p.id === Number(calloutDraft.challengedId));
   const distance = Math.abs(challengerIndex - challengedIndex);
@@ -1214,20 +1235,20 @@ function clearPlayerBanner(playerId) {
       ...prev.callouts,
     ],
   }));
-  alert("Submit callout reached webhook");
-fetch("/api/post-discord-callout", {
+
+  fetch("/api/post-discord-callout", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
     challengerName: loggedInPlayer.name,
-    challengedName:
-      players.find((p) => p.id === Number(calloutDraft.challengedId))?.name || "Unknown",
+    challengedName: challengedPlayer?.name || "Unknown",
   }),
 })
   .then(async (res) => {
     const data = await res.json();
+
     if (!res.ok) {
       alert("Discord callout failed: " + (data.error || "Unknown error"));
     } else {
@@ -1237,6 +1258,7 @@ fetch("/api/post-discord-callout", {
   .catch((error) => {
     alert("Discord callout error: " + error.message);
   });
+
   setCalloutDraft({ challengedId: "" });
 }
 
@@ -1415,6 +1437,98 @@ function confirmCallout(calloutId) {
     flawless: false,
   });
 }
+function submitRecommendation() {
+  if (!loggedInPlayer) return;
+
+  const title = recommendationDraft.title.trim();
+  const description = recommendationDraft.description.trim();
+
+  if (!title) {
+    alert("Please enter a recommendation title.");
+    return;
+  }
+
+  updateState((prev) => ({
+    ...prev,
+    recommendations: [
+      {
+        id: Date.now(),
+        title,
+        description,
+        category: recommendationDraft.category || "General",
+        status: "New",
+        votes: 0,
+        votedBy: [],
+        pinned: false,
+        createdById: loggedInPlayer.id,
+        createdByName: loggedInPlayer.name,
+        createdAt: new Date().toLocaleDateString(),
+      },
+      ...(prev.recommendations || []),
+    ],
+  }));
+
+  setRecommendationDraft({
+    title: "",
+    description: "",
+    category: "General",
+  });
+}
+
+function toggleRecommendationVote(recommendationId) {
+  if (!loggedInPlayer) return;
+
+  updateState((prev) => ({
+    ...prev,
+    recommendations: (prev.recommendations || []).map((item) => {
+      if (item.id !== recommendationId) return item;
+
+      const votedBy = item.votedBy || [];
+      const hasVoted = votedBy.includes(loggedInPlayer.id);
+      const nextVotedBy = hasVoted
+        ? votedBy.filter((id) => id !== loggedInPlayer.id)
+        : [...votedBy, loggedInPlayer.id];
+
+      return {
+        ...item,
+        votedBy: nextVotedBy,
+        votes: nextVotedBy.length,
+      };
+    }),
+  }));
+}
+
+function updateRecommendationStatus(recommendationId, status) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    recommendations: (prev.recommendations || []).map((item) =>
+      item.id === recommendationId ? { ...item, status } : item
+    ),
+  }));
+}
+
+function toggleRecommendationPinned(recommendationId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    recommendations: (prev.recommendations || []).map((item) =>
+      item.id === recommendationId ? { ...item, pinned: !item.pinned } : item
+    ),
+  }));
+}
+
+function deleteRecommendation(recommendationId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    recommendations: (prev.recommendations || []).filter((item) => item.id !== recommendationId),
+  }));
+}
+
 async function postLeaderboardToDiscord() {
   if (!canAdmin) return;
 
@@ -2196,6 +2310,7 @@ const pendingCallout = state.callouts?.find(
       ["hall", "Hall of Fame", <Star size={18} />],
       ["sunday", "Sunday Points", <Flame size={18} />],
       ["vote", "Vote", <Crown size={18} />],
+      ["recommendations", "Recommendations", <Star size={18} />],
     ].map(([key, label, icon]) => (
       <button
         key={key}
@@ -2483,23 +2598,6 @@ const pendingCallout = state.callouts?.find(
             </div>
           ) : null}
 
-          {canAdmin && c.status === "pending" ? (
-            <button
-              onClick={() =>
-                updateState((prev) => ({
-                  ...prev,
-                  callouts: prev.callouts.filter((item) => item.id !== c.id),
-                }))
-              }
-              style={{
-                ...buttonStyle(false, false),
-                background: "rgba(239,68,68,0.2)",
-                marginTop: 10,
-              }}
-            >
-              Delete Pending Call-out
-            </button>
-          ) : null}
         </div>
       );
     })}
@@ -2709,6 +2807,137 @@ const pendingCallout = state.callouts?.find(
                       <div style={{ color: "#d6caef", fontSize: 13 }}>Mode: {entry.mode} • Score: {entry.scoreText || "-"}</div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "recommendations" && (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "0.9fr 1.4fr", gap: 16 }}>
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>Recommendations</h2>
+              <div style={{ color: "#d6caef", marginBottom: 14 }}>
+                Tell the clan what we should upgrade next on the app.
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <input
+                  value={recommendationDraft.title}
+                  onChange={(e) => setRecommendationDraft((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Recommendation title"
+                  style={inputStyle(false)}
+                />
+
+                <select
+                  value={recommendationDraft.category}
+                  onChange={(e) => setRecommendationDraft((prev) => ({ ...prev, category: e.target.value }))}
+                  style={inputStyle(false)}
+                >
+                  {["General", "Callouts", "Tournament", "Leaderboard", "UI", "Rewards", "Ranked", "Bugs", "Discord"].map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+
+                <textarea
+                  value={recommendationDraft.description}
+                  onChange={(e) => setRecommendationDraft((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Explain your idea..."
+                  rows={5}
+                  style={{ ...inputStyle(false), resize: "vertical" }}
+                />
+
+                <button type="button" onClick={submitRecommendation} style={buttonStyle(true, false)}>
+                  <Plus size={14} /> Submit Recommendation
+                </button>
+              </div>
+            </div>
+
+            <div style={cardStyle()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                <h2 style={{ margin: 0 }}>Community Roadmap</h2>
+                <span style={badgeStyle()}>{(state.recommendations || []).length} ideas</span>
+              </div>
+
+              {sortedRecommendations.length === 0 ? (
+                <div style={{ color: "#d6caef" }}>No recommendations yet. Be the first to suggest an upgrade.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {sortedRecommendations.map((item) => {
+                    const hasVoted = (item.votedBy || []).includes(loggedInPlayer?.id);
+                    const statusColor =
+                      item.status === "Completed"
+                        ? ["rgba(34,197,94,0.18)", "#86efac"]
+                        : item.status === "In Progress"
+                        ? ["rgba(59,130,246,0.18)", "#93c5fd"]
+                        : item.status === "Planned"
+                        ? ["rgba(250,204,21,0.18)", "#fde68a"]
+                        : item.status === "Rejected"
+                        ? ["rgba(239,68,68,0.18)", "#fca5a5"]
+                        : ["rgba(255,255,255,0.08)", "white"];
+
+                    return (
+                      <div key={item.id} style={{ padding: 14, borderRadius: 16, background: "rgba(0,0,0,0.18)", border: item.pinned ? "1px solid rgba(250,204,21,0.55)" : "1px solid rgba(255,255,255,0.08)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              {item.pinned ? <span style={badgeStyle("rgba(250,204,21,0.18)", "#fde68a")}>Pinned</span> : null}
+                              <span style={badgeStyle()}>{item.category}</span>
+                              <span style={badgeStyle(statusColor[0], statusColor[1])}>{item.status || "New"}</span>
+                            </div>
+
+                            <div style={{ fontSize: 18, fontWeight: 900, marginTop: 8 }}>{item.title}</div>
+                            {item.description ? (
+                              <div style={{ color: "#d6caef", marginTop: 6, lineHeight: 1.45 }}>{item.description}</div>
+                            ) : null}
+                            <div style={{ color: "#9d90b7", fontSize: 12, marginTop: 8 }}>
+                              Submitted by {item.createdByName || "Unknown"} • {item.createdAt || "No date"}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => toggleRecommendationVote(item.id)}
+                            style={{
+                              ...buttonStyle(hasVoted, false),
+                              minWidth: 104,
+                            }}
+                          >
+                            👍 {Number(item.votes || 0)}
+                          </button>
+                        </div>
+
+                        {canAdmin ? (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                            {["New", "Planned", "In Progress", "Completed", "Rejected"].map((status) => (
+                              <button
+                                key={status}
+                                type="button"
+                                onClick={() => updateRecommendationStatus(item.id, status)}
+                                style={buttonStyle(item.status === status, false)}
+                              >
+                                {status}
+                              </button>
+                            ))}
+
+                            <button type="button" onClick={() => toggleRecommendationPinned(item.id)} style={buttonStyle(item.pinned, false)}>
+                              {item.pinned ? "Unpin" : "Pin"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm("Delete this recommendation?")) deleteRecommendation(item.id);
+                              }}
+                              style={{ ...buttonStyle(false, false), background: "rgba(239,68,68,0.22)" }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
