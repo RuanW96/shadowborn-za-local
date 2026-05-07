@@ -24,30 +24,28 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 1;
+const STORAGE_ROW_ID = 999;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
-
 const PLAYER_PINS = {
-  "The Fudgeman": "4182",
-  Bulletstorm: "2809",
-  Thirdstriker: "3319",
-  Toxicmuffin: "8842",
-  Stifler: "5206",
-  Dreamzz: "2784",
-  Botzzy: "6413",
-  Gallie: "7095",
-  Jeanre: "1946",
-  STG: "8361",
-  Dwain: "4728",
-  DancyRaptor: "6159",
-  Dennis: "9034",
-  UncleCyril: "2871",
-  Nico: "5540",
-  AJ: "7622",
-  Jaundre: "3185",
-  Dolomieu: "1782",
-  Papi: "4309",
+  1: "4182",
+  2: "2809",
+  3: "3319",
+  4: "8842",
+  5: "5206",
+  6: "2784",
+  7: "6413",
+  8: "7095",
+  9: "1946",
+  10: "8361",
+  11: "4728",
+  12: "6159",
+  13: "9034",
+  14: "2871",
+  15: "5540",
+  16: "7622",
+  17: "3185",
+  18: "4309",
 };
 
 const defaultPlayers = [
@@ -92,6 +90,7 @@ const defaultState = {
   tagline: "Victory awaits in the shadows",
   logoUrl: DEFAULT_LOGO,
   players: defaultPlayers,
+  playerPins: PLAYER_PINS,
   tournament: emptyTournament,
   championBanner: null,
   hallOfFame: [],
@@ -309,6 +308,7 @@ export default function App() {
     name: "",
     emblem: "",
     points: 0,
+    pin: "",
     tournamentWins: 0,
     avatar: "",
     role: "player",
@@ -381,6 +381,7 @@ useEffect(() => {
           ...prev,
           ...data.data,
           players: data.data.players || prev.players,
+          playerPins: data.data.playerPins || prev.playerPins || PLAYER_PINS,
           tournament: data.data.tournament || prev.tournament,
           hallOfFame: data.data.hallOfFame || prev.hallOfFame,
           callouts: data.data.callouts || prev.callouts,
@@ -420,6 +421,7 @@ useEffect(() => {
         ...defaultState,
         ...data.data,
         players: data.data.players || defaultPlayers,
+        playerPins: data.data.playerPins || PLAYER_PINS,
         tournament: { ...emptyTournament, ...(data.data.tournament || {}) },
         hallOfFame: data.data.hallOfFame || [],
         callouts: data.data.callouts || [],
@@ -466,7 +468,7 @@ useEffect(() => {
       return;
     }
 
-    const expectedPin = PLAYER_PINS[chosen.name];
+    const expectedPin = state.playerPins?.[chosen.id] || PLAYER_PINS[chosen.id];
 
     if (!expectedPin) {
       setLoginError("No PIN found for this player.");
@@ -656,6 +658,7 @@ function chooseBanner(playerId) {
       emblem: "",
       points: 0,
       tournamentWins: 0,
+      pin: "",
       avatar: "",
       role: "player",
     });
@@ -1735,7 +1738,27 @@ const glowStyles = `
     <button type="button" onClick={() => clearPlayerBanner(player.id)} style={buttonStyle(false, false)}>
       Remove Banner
     </button>
+<button
+  type="button"
+  onClick={() => {
+    const newPin = prompt(`Enter new PIN for ${player.name}:`);
 
+    if (!newPin) return;
+
+    updateState((prev) => ({
+      ...prev,
+      playerPins: {
+        ...(prev.playerPins || {}),
+        [player.id]: newPin,
+      },
+    }));
+
+    alert(`PIN updated for ${player.name}`);
+  }}
+  style={buttonStyle(false, false)}
+>
+  Change PIN
+</button>
     <button
       type="button"
       onClick={() => {
@@ -2447,7 +2470,15 @@ const pendingCallout = state.callouts?.find(
 
               <div style={{ marginBottom: 8 }}>Starting Points</div>
               <input type="number" value={newPlayer.points} onChange={(e) => setNewPlayer({ ...newPlayer, points: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
-
+              <div style={{ marginBottom: 8 }}>Login PIN</div>
+<input
+  type="text"
+  value={newPlayer.pin}
+  onChange={(e) => setNewPlayer({ ...newPlayer, pin: e.target.value })}
+  placeholder="Example: 1234"
+  style={inputStyle(!canAdmin)}
+  disabled={!canAdmin}
+/>
               <div style={{ marginBottom: 8 }}>Tournament Wins</div>
               <input type="number" value={newPlayer.tournamentWins} onChange={(e) => setNewPlayer({ ...newPlayer, tournamentWins: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
