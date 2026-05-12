@@ -24,9 +24,19 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 
-const STORAGE_ROW_ID = 1;
+const STORAGE_ROW_ID = 999;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
+const COD_RANKS = [
+  "Bronze I", "Bronze II", "Bronze III",
+  "Silver I", "Silver II", "Silver III",
+  "Gold I", "Gold II", "Gold III",
+  "Platinum I", "Platinum II", "Platinum III",
+  "Diamond I", "Diamond II", "Diamond III",
+  "Crimson I", "Crimson II", "Crimson III",
+  "Iridescent",
+  "Top 250",
+];
 const PLAYER_PINS = {
   1: "4182",
   2: "2809",
@@ -46,6 +56,34 @@ const PLAYER_PINS = {
   16: "7622",
   17: "3185",
   18: "4309",
+};
+const RANK_BADGES = {
+  "Bronze I": "/ranks/bronze1.png",
+  "Bronze II": "/ranks/bronze2.png",
+  "Bronze III": "/ranks/bronze3.png",
+
+  "Silver I": "/ranks/silver1.png",
+  "Silver II": "/ranks/silver2.png",
+  "Silver III": "/ranks/silver3.png",
+
+  "Gold I": "/ranks/gold1.png",
+  "Gold II": "/ranks/gold2.png",
+  "Gold III": "/ranks/gold3.png",
+
+  "Platinum I": "/ranks/platinum1.png",
+  "Platinum II": "/ranks/platinum2.png",
+  "Platinum III": "/ranks/platinum3.png",
+
+  "Diamond I": "/ranks/diamond1.png",
+  "Diamond II": "/ranks/diamond2.png",
+  "Diamond III": "/ranks/diamond3.png",
+
+  "Crimson I": "/ranks/crimson1.png",
+  "Crimson II": "/ranks/crimson2.png",
+  "Crimson III": "/ranks/crimson3.png",
+
+  "Iridescent": "/ranks/iridescent.png",
+  "Top 250": "/ranks/top250.png",
 };
 
 const defaultPlayers = [
@@ -111,6 +149,7 @@ const defaultState = {
        
   },
   recommendations: [],
+  rankRequests: [],
   sundayHistory: [],
 };
 
@@ -181,7 +220,20 @@ function badgeStyle(bg = "rgba(255,255,255,0.08)", color = "white") {
     fontWeight: 700,
   };
 }
-
+function statCardStyle() {
+  return {
+    background: "#13111b",
+    border: "1px solid rgba(168,85,247,0.18)",
+    borderRadius: 18,
+    padding: "18px 14px",
+    textAlign: "center",
+    minHeight: 100,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    boxShadow: "0 0 24px rgba(168,85,247,0.08)",
+  };
+}
 function pairTeams(teamIds, bracket, stage) {
   const ids = [...teamIds];
   const matches = [];
@@ -231,6 +283,7 @@ function LeaderboardCard({ player, index }) {
         borderRadius: 18,
         overflow: "hidden",
         marginBottom: 14,
+        position: "relative",
         border: isMainSlayer ? "2px solid #facc15" : `1px solid ${rank.color}`,
 boxShadow: isMainSlayer
   ? "0 0 18px rgba(250,204,21,0.45), 0 0 38px rgba(249,115,22,0.35)"
@@ -267,9 +320,40 @@ animation: isMainSlayer ? "slayerGlow 2s infinite alternate" : "none",
           />
 
           <div>
-            <div style={{ fontWeight: 900, fontSize: 26 }}>
-              #{index + 1} {player.name}
-            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+  <span>
+    #{index + 1} {player.name}
+  </span>
+
+  {player.codRank && RANK_BADGES[player.codRank] ? (
+  <img
+    src={RANK_BADGES[player.codRank]}
+    alt={player.codRank}
+    title={player.codRank}
+    style={{
+  position: "absolute",
+  top: 15,
+  right: 25,
+  width: 135,
+  height: 135,
+  objectFit: "contain",
+  zIndex: 5,
+
+  // glow
+  filter: "drop-shadow(0 0 20px rgba(168,85,247,0.95))",
+
+  // background glow bubble
+  background: "rgba(10,10,20,0.55)",
+  borderRadius: "50%",
+  padding: 10,
+  backdropFilter: "blur(8px)",
+
+  // outline
+  border: "2px solid rgba(168,85,247,0.45)",
+}}
+  />
+) : null}
+</div>
 
             <div style={{ color: rank.color, fontWeight: 800, marginTop: 4 }}>
               {rank.name}
@@ -303,7 +387,8 @@ export default function App() {
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
-
+  const [selectedProfilePlayerId, setSelectedProfilePlayerId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const [newPlayer, setNewPlayer] = useState({
     name: "",
     emblem: "",
@@ -337,9 +422,16 @@ export default function App() {
     description: "",
     category: "General",
   });
+  const [rankRequestDraft, setRankRequestDraft] = useState({
+  rank: "",
+  proofUrl: "",
+});
 
 
-  const players = state.players || [];
+  const players = (state.players || []).map((p) => ({
+  codRank: "",
+  ...p,
+}));
   const tournament = state.tournament || emptyTournament;
 
   const sortedPlayers = useMemo(
@@ -386,6 +478,7 @@ useEffect(() => {
           hallOfFame: data.data.hallOfFame || prev.hallOfFame,
           callouts: data.data.callouts || prev.callouts,
           recommendations: data.data.recommendations || prev.recommendations || [],
+          rankRequests: data.data.rankRequests || prev.rankRequests || [],
           championBanner: data.data.championBanner || prev.championBanner,
           poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
         };
@@ -426,6 +519,7 @@ useEffect(() => {
         hallOfFame: data.data.hallOfFame || [],
         callouts: data.data.callouts || [],
         recommendations: data.data.recommendations || [],
+        rankRequests: data.data.rankRequests || [],
         poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
       });
     } else {
@@ -626,6 +720,47 @@ function chooseBanner(playerId) {
 
   input.click();
 }
+
+async function uploadRankProof(file) {
+  if (!file || !loggedInPlayer) return;
+
+  const extension = file.name.split(".").pop();
+  const fileName = `rank-proof-${loggedInPlayer.id}-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage
+    .from("rank-proofs")
+    .upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+  if (error) {
+    alert("Rank proof upload failed: " + error.message);
+    return;
+  }
+
+  const { data } = supabase.storage.from("rank-proofs").getPublicUrl(fileName);
+
+  setRankRequestDraft((prev) => ({
+    ...prev,
+    proofUrl: data.publicUrl,
+  }));
+
+  alert("Screenshot uploaded successfully.");
+}
+
+function chooseRankProof() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    await uploadRankProof(file);
+  };
+
+  input.click();
+}
   function addPlayer() {
     if (!canAdmin) return;
 
@@ -649,6 +784,7 @@ function chooseBanner(playerId) {
           activityPoints: 0,
           avatar: "",
           role: newPlayer.role,
+          codRank: "",
         },
       ],
     }));
@@ -1531,7 +1667,72 @@ function deleteRecommendation(recommendationId) {
     recommendations: (prev.recommendations || []).filter((item) => item.id !== recommendationId),
   }));
 }
+function submitRankRequest() {
+  if (!loggedInPlayer) return;
 
+  if (!rankRequestDraft.rank) {
+    alert("Please select your BO7 rank.");
+    return;
+  }
+
+  if (!rankRequestDraft.proofUrl.trim()) {
+    alert("Please add proof link or screenshot URL.");
+    return;
+  }
+
+  updateState((prev) => ({
+    ...prev,
+    rankRequests: [
+      {
+        id: Date.now(),
+        playerId: loggedInPlayer.id,
+        playerName: loggedInPlayer.name,
+        requestedRank: rankRequestDraft.rank,
+        proofUrl: rankRequestDraft.proofUrl.trim(),
+        status: "pending",
+        createdAt: new Date().toLocaleDateString(),
+      },
+      ...(prev.rankRequests || []),
+    ],
+  }));
+
+  setRankRequestDraft({
+    rank: "",
+    proofUrl: "",
+  });
+
+  alert("Rank request submitted for admin approval.");
+}
+
+function approveRankRequest(requestId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => {
+    const request = (prev.rankRequests || []).find((r) => r.id === requestId);
+    if (!request) return prev;
+
+    return {
+      ...prev,
+      players: prev.players.map((p) =>
+        p.id === request.playerId ? { ...p, codRank: request.requestedRank } : p
+      ),
+      rankRequests: (prev.rankRequests || []).map((r) =>
+        r.id === requestId ? { ...r, status: "approved" } : r
+      ),
+    };
+  });
+}
+
+function rejectRankRequest(requestId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    rankRequests: (prev.rankRequests || []).map((r) =>
+      r.id === requestId ? { ...r, status: "rejected" } : r
+    ),
+  }));
+}
 async function postLeaderboardToDiscord() {
   if (!canAdmin) return;
 
@@ -1604,8 +1805,10 @@ const glowStyles = `
 
     return (
   <div
+  onClick={() => setSelectedProfilePlayerId(player.id)}
     style={{
       ...cardStyle(),
+      cursor: "pointer",
       position: "relative",
       overflow: "hidden",
       background: player.banner
@@ -1655,7 +1858,23 @@ const glowStyles = `
 
           <div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>{player.name}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+  <span style={{ fontWeight: 800, fontSize: 18 }}>{player.name}</span>
+
+  {player.codRank && RANK_BADGES[player.codRank] ? (
+    <img
+      src={RANK_BADGES[player.codRank]}
+      alt={player.codRank}
+      title={player.codRank}
+      style={{
+        width: 26,
+        height: 26,
+        objectFit: "contain",
+        filter: "drop-shadow(0 0 8px rgba(168,85,247,0.45))",
+      }}
+    />
+  ) : null}
+</div>
               <span style={badgeStyle(rank.glow, rank.color)}>{rank.name}</span>
               <span style={badgeStyle()}>{player.role}</span>
             </div>
@@ -2136,6 +2355,309 @@ const pendingCallout = state.callouts?.find(
   return (
     <div style={appBg}>
     <style>{glowStyles}</style>
+    {previewImage && (
+  <div
+    onClick={() => setPreviewImage(null)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.9)",
+      zIndex: 10000,
+      display: "grid",
+      placeItems: "center",
+      padding: 18,
+    }}
+  >
+    <img
+      src={previewImage}
+      alt="Preview"
+      style={{
+        maxWidth: "96vw",
+        maxHeight: "90vh",
+        objectFit: "contain",
+        borderRadius: 18,
+        boxShadow: "0 0 40px rgba(168,85,247,0.35)",
+      }}
+    />
+  </div>
+)}
+    {selectedProfilePlayerId && (() => {
+  const profilePlayer = players.find((p) => p.id === selectedProfilePlayerId);
+  if (!profilePlayer) return null;
+
+  const profileRank = getRank(profilePlayer.points);
+
+  return (
+    <div
+      onClick={() => setSelectedProfilePlayerId(null)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "#05020a",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(1100px, 96vw)",
+          maxHeight: "92vh",
+          overflowY: "auto",
+          background: "#12101a",
+          border: "1px solid #2a1b3d",
+          borderRadius: 24,
+          boxShadow: "0 0 50px rgba(168,85,247,0.25)",
+        }}
+      >
+        <div
+        onClick={() => setPreviewImage(profilePlayer.banner || DEFAULT_LOGO)}
+          style={{
+            height: isMobile ? 180 : 300,
+            backgroundImage: `url(${profilePlayer.banner || DEFAULT_LOGO})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            borderRadius: "24px 24px 0 0",
+            cursor: "pointer",
+          }}
+        >
+          <button
+            onClick={() => setSelectedProfilePlayerId(null)}
+            style={{
+              ...buttonStyle(false, false),
+              position: "absolute",
+              top: 14,
+              right: 14,
+              background: "rgba(0,0,0,0.55)",
+            }}
+          >
+            ✕ Close
+          </button>
+        </div>
+
+        <div style={{ padding: isMobile ? 18 : 28, position: "relative" }}>
+          <img
+            src={profilePlayer.avatar || DEFAULT_LOGO}
+            alt={profilePlayer.name}
+            style={{
+              width: isMobile ? 110 : 155,
+              height: isMobile ? 110 : 155,
+              objectFit: "cover",
+              borderRadius: 28,
+              border: `4px solid ${profileRank.color}`,
+              boxShadow: `0 0 30px ${profileRank.glow}`,
+              background: "#111",
+              position: isMobile ? "relative" : "absolute",
+              right: isMobile ? "auto" : 40,
+              top: isMobile ? -55 : -80,
+            }}
+          />
+
+          <div style={{ paddingRight: isMobile ? 0 : 220 }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? 32 : 48 }}>
+              {profilePlayer.name}
+            </h1>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              <span style={badgeStyle("rgba(168,85,247,0.25)", "#d8b4fe")}>
+                {profilePlayer.role}
+              </span>
+              <span style={badgeStyle(profileRank.glow, profileRank.color)}>
+                {profileRank.name}
+              </span>
+            </div>
+
+            <div style={{ marginTop: 18, fontSize: 22, fontWeight: 900, color: profileRank.color }}>
+              {profileRank.name} <span style={{ color: "#cfc4e8", fontSize: 16 }}>({profilePlayer.points} Points)</span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, 1fr)",
+              gap: 12,
+              marginTop: 26,
+            }}
+          >
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.points}</div>
+              <div style={{ color: "#a9a0bd" }}>Points</div>
+            </div>
+
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.tournamentWins}</div>
+              <div style={{ color: "#a9a0bd" }}>Tournament Wins</div>
+            </div>
+
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.wins}</div>
+              <div style={{ color: "#a9a0bd" }}>Wins</div>
+            </div>
+
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.losses}</div>
+              <div style={{ color: "#a9a0bd" }}>Losses</div>
+            </div>
+
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.mvpPoints}</div>
+              <div style={{ color: "#a9a0bd" }}>MVP Points</div>
+            </div>
+
+            <div style={statCardStyle()}>
+              <div style={{ fontSize: 26, fontWeight: 900 }}>{profilePlayer.activityPoints}</div>
+              <div style={{ color: "#a9a0bd" }}>Activity Points</div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr",
+              gap: 14,
+              marginTop: 18,
+            }}
+          >
+            <div style={cardStyle()}>
+              <h3 style={{ marginTop: 0 }}>About</h3>
+              <div style={{ color: "#cfc4e8" }}>
+                Shadowborn ZA member. Always grinding. Always improving.
+              </div>
+            </div>
+             <div style={cardStyle()}>
+  <h3 style={{ marginTop: 0 }}>BO7 Ranked Rank</h3>
+{canAdmin && (state.rankRequests || []).filter((r) => r.status === "pending").length > 0 ? (
+  <div style={cardStyle()}>
+    <h3 style={{ marginTop: 0 }}>Pending Rank Approvals</h3>
+
+    <div style={{ display: "grid", gap: 10 }}>
+      {(state.rankRequests || [])
+        .filter((r) => r.status === "pending")
+        .map((request) => (
+          <div
+            key={request.id}
+            style={{
+              background: "rgba(0,0,0,0.22)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 14,
+              padding: 12,
+            }}
+          >
+            <div style={{ fontWeight: 900 }}>
+              {request.playerName} requested {request.requestedRank}
+            </div>
+
+            <div style={{ color: "#a9a0bd", fontSize: 13, marginTop: 4 }}>
+              Submitted: {request.createdAt}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(request.proofUrl)}
+                style={buttonStyle(false, false)}
+              >
+                View Proof
+              </button>
+
+              <button
+                type="button"
+                onClick={() => approveRankRequest(request.id)}
+                style={buttonStyle(true, false)}
+              >
+                Approve
+              </button>
+
+              <button
+                type="button"
+                onClick={() => rejectRankRequest(request.id)}
+                style={{
+                  ...buttonStyle(false, false),
+                  background: "rgba(239,68,68,0.22)",
+                }}
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+    </div>
+  </div>
+) : null}
+  <div style={{ marginBottom: 10 }}>
+    Current Approved Rank:{" "}
+    <strong>{profilePlayer.codRank || "Not approved yet"}</strong>
+  </div>
+
+  {loggedInPlayer?.id === profilePlayer.id ? (
+    <div style={{ display: "grid", gap: 10 }}>
+      <select
+        value={rankRequestDraft.rank}
+        onChange={(e) =>
+          setRankRequestDraft({ ...rankRequestDraft, rank: e.target.value })
+        }
+        style={inputStyle(false)}
+      >
+        <option value="">Select your BO7 rank</option>
+        {COD_RANKS.map((rank) => (
+          <option key={rank} value={rank}>
+            {rank}
+          </option>
+        ))}
+      </select>
+
+      <button
+  type="button"
+  onClick={chooseRankProof}
+  style={buttonStyle(false, false)}
+>
+  Upload Screenshot Proof
+</button>
+
+{rankRequestDraft.proofUrl ? (
+  <div style={{ color: "#86efac", fontSize: 13 }}>
+    ✅ Screenshot uploaded
+  </div>
+) : (
+  <div style={{ color: "#fca5a5", fontSize: 13 }}>
+    Screenshot proof required
+  </div>
+)}
+
+      <button onClick={submitRankRequest} style={buttonStyle(true, false)}>
+        Submit Rank for Approval
+      </button>
+    </div>
+  ) : (
+    <div style={{ color: "#a9a0bd" }}>
+      Only this player can request a rank update.
+    </div>
+  )}
+</div>
+            <div style={cardStyle()}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                <span style={{ color: "#a9a0bd" }}>Member Since</span>
+                <strong>{profilePlayer.createdAt || "2026/05/11"}</strong>
+              </div>
+
+              {canAdmin ? (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#a9a0bd" }}>Login PIN</span>
+                  <strong>{state.playerPins?.[profilePlayer.id] || PLAYER_PINS[profilePlayer.id] || "Not set"}</strong>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+})()}
       <div style={{ maxWidth: 1800, margin: "0 auto", padding: 20 }}>
        {pendingCallout && (
   <div
