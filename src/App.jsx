@@ -71,8 +71,8 @@ const RANK_BADGES = {
   "Gold III": "/ranks/gold3.png",
 
   "Platinum I": "/ranks/platinum1.png",
-  "Platinum II": "/ranks/platinum2.png",
-  "Platinum III": "/ranks/platinum3.png",
+  "Platinum II": "/ranks/platinumtwo.png",
+  "Platinum III": "/ranks/platinumthree.png",
 
   "Diamond I": "/ranks/diamond1.png",
   "Diamond II": "/ranks/diamond2.png",
