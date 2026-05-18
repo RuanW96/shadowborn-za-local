@@ -414,6 +414,8 @@ export default function App() {
     objectiveLeaderId: "",
     bestKdId: "",
     zeroDeathId: "",
+    substitutePlayerId: "",
+substituteTeamType: "winning",
     flawless: false,
   });
 
@@ -1510,6 +1512,15 @@ function confirmCallout(calloutId) {
         losses += 1;
         activityPoints += 1;
       }
+      if (Number(sundayEntry.substitutePlayerId) === playerId) {
+  if (sundayEntry.substituteTeamType === "winning") {
+    points += 10;
+    activityPoints += 1;
+  } else {
+    points += 5;
+    activityPoints += 1;
+  }
+}
 
       if (Number(sundayEntry.winningMvpId) === playerId) {
         points += 10;
@@ -1573,6 +1584,8 @@ function confirmCallout(calloutId) {
     objectiveLeaderId: "",
     bestKdId: "",
     zeroDeathId: "",
+    substitutePlayerId: "",
+substituteTeamType: "winning",
     flawless: false,
   });
 }
@@ -3339,7 +3352,43 @@ const pendingCallout = state.callouts?.find(
                     {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 ))}
+<label style={{ display: "grid", gap: 8 }}>
+  <span>Rotation / Substitute Player</span>
 
+  <select
+    value={sundayEntry.substitutePlayerId}
+    onChange={(e) =>
+      setSundayEntry({
+        ...sundayEntry,
+        substitutePlayerId: e.target.value,
+      })
+    }
+  >
+    <option value="">No substitute player</option>
+    {players.map((p) => (
+      <option key={p.id} value={p.id}>
+        {p.name}
+      </option>
+    ))}
+  </select>
+
+  <select
+    value={sundayEntry.substituteTeamType}
+    onChange={(e) =>
+      setSundayEntry({
+        ...sundayEntry,
+        substituteTeamType: e.target.value,
+      })
+    }
+  >
+    <option value="winning">
+      Give Winning Team Points (+10)
+    </option>
+    <option value="losing">
+      Give Losing Team Points (+5)
+    </option>
+  </select>
+</label>
                 <label>
                   <input type="checkbox" checked={sundayEntry.flawless} onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })} disabled={!canAdmin} /> Flawless victory bonus
                 </label>
