@@ -382,6 +382,12 @@ export default function App() {
   const [saveTimer, setSaveTimer] = useState(null);
   const [auth, setAuth] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  const [calloutHistoryFilter, setCalloutHistoryFilter] = useState("all");
+  const [openCalloutSections, setOpenCalloutSections] = useState({
+  pending: true,
+  accepted: true,
+  completed: false,
+});
   const [menuOpen, setMenuOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
@@ -451,7 +457,51 @@ substituteTeamType: "winning",
     ),
     [state.recommendations]
   );
+const pendingCallouts = (state.callouts || []).filter(
+  (c) => c.status === "pending"
+);
 
+const acceptedCallouts = (state.callouts || []).filter(
+  (c) => c.status === "accepted" && !c.confirmed
+);
+
+const completedCallouts = (state.callouts || []).filter(
+  (c) => c.status === "confirmed" || c.status === "forfeit"
+);
+const calloutHistoryMonths = [
+  "all",
+  ...Array.from(
+    new Set(
+      completedCallouts
+        .map((c) => c.createdAt)
+        .filter(Boolean)
+        .map((date) => {
+          const d = new Date(date);
+          return Number.isNaN(d.getTime())
+            ? date
+            : d.toLocaleDateString("en-ZA", {
+                year: "numeric",
+                month: "long",
+              });
+        })
+    )
+  ),
+];
+
+const filteredCompletedCallouts =
+  calloutHistoryFilter === "all"
+    ? completedCallouts
+    : completedCallouts.filter((c) => {
+        const d = new Date(c.createdAt);
+        const label = Number.isNaN(d.getTime())
+          ? c.createdAt
+          : d.toLocaleDateString("en-ZA", {
+              year: "numeric",
+              month: "long",
+            });
+
+        return label === calloutHistoryFilter;
+      });
   const loggedInPlayer = auth ? players.find((p) => p.id === auth.playerId) : null;
   const canAdmin = loggedInPlayer && (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
 
@@ -3060,118 +3110,158 @@ const pendingCallout = state.callouts?.find(
             </div>
             
             <div style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Call-out History</h2>
-              {state.callouts.length === 0 ? (
-  <div style={{ color: "#d6caef" }}>No call-outs yet.</div>
-) : (
-  <div style={{ display: "grid", gap: 12 }}>
-    {state.callouts.map((c) => {
-      const challenger = players.find((p) => p.id === c.challengerId);
-      const challenged = players.find((p) => p.id === c.challengedId);
-      const canEnterResult =
-        c.status === "accepted" &&
-        !c.confirmed &&
-        (loggedInPlayer?.id === c.challengerId || loggedInPlayer?.id === c.challengedId || canAdmin);
+  <h2 style={{ marginTop: 0 }}>Call-out History</h2>
+<div style={{ marginBottom: 16 }}>
+  <label style={{ marginRight: 10, fontWeight: 700 }}>
+    Filter by Month:
+  </label>
 
-      return (
-        <div key={c.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
-          <div style={{ fontWeight: 800 }}>
-            {challenger?.name} vs {challenged?.name}
-          </div>
-
-          <div style={{ color: "#d6caef", marginTop: 4 }}>
-            Score: {c.scoreA || "-"} - {c.scoreB || "-"}
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            <span
-              style={badgeStyle(
-                c.status === "forfeit"
-                  ? "rgba(239,68,68,0.22)"
-                  : c.confirmed
-                  ? "rgba(34,197,94,0.18)"
-                  : c.status === "accepted"
-                  ? "rgba(59,130,246,0.18)"
-                  : "rgba(255,255,255,0.08)",
-                c.status === "forfeit"
-                  ? "#fca5a5"
-                  : c.confirmed
-                  ? "#86efac"
-                  : c.status === "accepted"
-                  ? "#93c5fd"
-                  : "white"
-              )}
-            >
-              {c.status === "forfeit"
-                ? "Forfeit"
-                : c.confirmed
-                ? "Confirmed"
-                : c.status === "accepted"
-                ? "Accepted"
-                : "Pending"}
-            </span>
-          </div>
-{canAdmin && !c.confirmed && c.status !== "accepted" && c.status !== "forfeit" && (
-  <button
-    type="button"
-    onClick={() => deleteCallout(c.id)}
+  <select
+    value={calloutHistoryFilter}
+    onChange={(e) => setCalloutHistoryFilter(e.target.value)}
     style={{
-      ...buttonStyle(false, false),
-      background: "rgba(239,68,68,0.22)",
-      marginTop: 10,
+      padding: 10,
+      borderRadius: 10,
+      background: "#15151d",
+      color: "white",
+      border: "1px solid rgba(255,255,255,0.12)",
     }}
   >
-    Delete Pending Call-out
-  </button>
-)}
-          {canEnterResult ? (
-            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <input
-                  type="number"
-                  placeholder={`${challenger?.name} score`}
-                  value={c.scoreA || ""}
-                  onChange={(e) =>
-                    updateState((prev) => ({
-                      ...prev,
-                      callouts: prev.callouts.map((item) =>
-                        item.id === c.id ? { ...item, scoreA: e.target.value } : item
-                      ),
-                    }))
-                  }
-                  style={inputStyle(false)}
-                />
+    {calloutHistoryMonths.map((month) => (
+      <option key={month} value={month}>
+        {month === "all" ? "All Months" : month}
+      </option>
+    ))}
+  </select>
+</div>
+  {completedCallouts.length === 0 &&
+  pendingCallouts.length === 0 &&
+  acceptedCallouts.length === 0 ? (
+    <div style={{ color: "#d6caef" }}>No call-outs yet.</div>
+  ) : (
+    <div style={{ display: "grid", gap: 18 }}>
+      {[
+  { key: "pending", title: "⏳ Pending Call-outs", items: pendingCallouts },
+  { key: "accepted", title: "⚔️ Accepted / Still To Be Played", items: acceptedCallouts },
+  { key: "completed", title: "🏆 Completed Call-out History", items: filteredCompletedCallouts },
+].map((section) => (
+        <div key={section.title}>
+          <h3
+  onClick={() =>
+    setOpenCalloutSections((prev) => ({
+      ...prev,
+      [section.key]: !prev[section.key],
+    }))
+  }
+  style={{
+    marginBottom: 10,
+    cursor: "pointer",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  }}
+>
+  <span>{section.title} ({section.items.length})</span>
+  <span>{openCalloutSections[section.key] ? "▲" : "▼"}</span>
+</h3>
 
-                <input
-                  type="number"
-                  placeholder={`${challenged?.name} score`}
-                  value={c.scoreB || ""}
-                  onChange={(e) =>
-                    updateState((prev) => ({
-                      ...prev,
-                      callouts: prev.callouts.map((item) =>
-                        item.id === c.id ? { ...item, scoreB: e.target.value } : item
-                      ),
-                    }))
-                  }
-                  style={inputStyle(false)}
-                />
-              </div>
+          {openCalloutSections[section.key] ? (
+  <div style={{ display: "grid", gap: 12 }}>
+            {section.items.length === 0 ? (
+              <div style={{ color: "#a9a0bd" }}>None</div>
+            ) : (
+              section.items.map((c) => {
+                const challenger = players.find((p) => p.id === c.challengerId);
+                const challenged = players.find((p) => p.id === c.challengedId);
+                const canEnterResult =
+                  c.status === "accepted" &&
+                  !c.confirmed &&
+                  (loggedInPlayer?.id === c.challengerId ||
+                    loggedInPlayer?.id === c.challengedId ||
+                    canAdmin);
 
-              <button onClick={() => confirmCallout(c.id)} style={buttonStyle(true, false)}>
-                Confirm Result
-              </button>
-            </div>
-          ) : null}
+                return (
+                  <div key={c.id} style={{ padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)" }}>
+                    <div style={{ fontWeight: 800 }}>
+                      {challenger?.name} vs {challenged?.name}
+                    </div>
 
-        </div>
-      );
-    })}
-  </div>
-)}
-            </div>
+                    <div style={{ color: "#d6caef", marginTop: 4 }}>
+                      Score: {c.scoreA || "-"} - {c.scoreB || "-"}
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <span style={badgeStyle()}>
+                        {c.status === "forfeit" ? "Forfeit" : c.confirmed ? "Confirmed" : c.status === "accepted" ? "Accepted" : "Pending"}
+                      </span>
+                    </div>
+
+                    {canAdmin && !c.confirmed && c.status !== "forfeit" ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteCallout(c.id)}
+                        style={{
+                          ...buttonStyle(false, false),
+                          background: "rgba(239,68,68,0.22)",
+                          marginTop: 10,
+                        }}
+                      >
+                        {c.status === "accepted" ? "Delete Accepted Call-out" : "Delete Pending Call-out"}
+                      </button>
+                    ) : null}
+
+                    {canEnterResult ? (
+                      <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <input
+                            type="number"
+                            placeholder={`${challenger?.name} score`}
+                            value={c.scoreA || ""}
+                            onChange={(e) =>
+                              updateState((prev) => ({
+                                ...prev,
+                                callouts: prev.callouts.map((item) =>
+                                  item.id === c.id ? { ...item, scoreA: e.target.value } : item
+                                ),
+                              }))
+                            }
+                            style={inputStyle(false)}
+                          />
+
+                          <input
+                            type="number"
+                            placeholder={`${challenged?.name} score`}
+                            value={c.scoreB || ""}
+                            onChange={(e) =>
+                              updateState((prev) => ({
+                                ...prev,
+                                callouts: prev.callouts.map((item) =>
+                                  item.id === c.id ? { ...item, scoreB: e.target.value } : item
+                                ),
+                              }))
+                            }
+                            style={inputStyle(false)}
+                          />
+                        </div>
+
+                        <button onClick={() => confirmCallout(c.id)} style={buttonStyle(true, false)}>
+                          Confirm Result
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
           </div>
-        )}
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+  </div>
+)}    
 
         {tab === "tournament" && (
           <div style={{ display: "grid", gap: 16 }}>
@@ -3562,7 +3652,7 @@ const pendingCallout = state.callouts?.find(
             </div>
           </div>
         )}
-      </div>
+            </div>
     </div>
-  )
+  );
 }
