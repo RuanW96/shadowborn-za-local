@@ -284,11 +284,11 @@ function LeaderboardCard({ player, index }) {
         overflow: "hidden",
         marginBottom: 14,
         position: "relative",
-        border: isMainSlayer ? "2px solid #facc15" : `1px solid ${rank.color}`,
+        border: isMainSlayer ? `2px solid ${rank.color}` : `1px solid ${rank.color}`,
 boxShadow: isMainSlayer
-  ? "0 0 18px rgba(250,204,21,0.45), 0 0 38px rgba(249,115,22,0.35)"
+  ? `0 0 18px ${rank.glow}, 0 0 42px ${rank.glow}`
   : `0 0 14px ${rank.glow}`,
-animation: isMainSlayer ? "slayerGlow 2s infinite alternate" : "none",
+animation: "none",
         background: "rgba(255,255,255,0.05)",
       }}
     >
@@ -989,6 +989,9 @@ function clearPlayerBanner(playerId) {
           redemptionCarry: null,
           grandFinal: null,
           championTeamId: null,
+          placementPointsAwarded: false,
+          thirdPlaceAwarded: false,
+          thirdPlaceTeamId: null,
           status: "Live",
           winnersStage: 1,
           redemptionStage: 1,
@@ -1155,7 +1158,7 @@ function clearPlayerBanner(playerId) {
           m.id === matchId && m.locked ? { ...m, pointsAwarded: true } : m
         );
 
-      const nextTournament = {
+      let nextTournament = {
         ...prev.tournament,
         activeWinners: markPointsAwarded(activeWinners),
         activeRedemption: markPointsAwarded(activeRedemption),
@@ -1164,7 +1167,24 @@ function clearPlayerBanner(playerId) {
             ? { ...grandFinal, pointsAwarded: true }
             : grandFinal,
       };
+if (
+  grandFinal?.id === matchId &&
+  grandFinal.locked &&
+  grandFinal.winnerId &&
+  !prev.tournament.placementPointsAwarded
+) {
+  nextPlayers = awardTeamPoints(nextPlayers, prev.tournament.teams, grandFinal.winnerId, 80, "champion");
+  nextPlayers = awardTeamPoints(nextPlayers, prev.tournament.teams, grandFinal.loserId, 60, null);
 
+  if (prev.tournament.thirdPlaceTeamId) {
+    nextPlayers = awardTeamPoints(nextPlayers, prev.tournament.teams, prev.tournament.thirdPlaceTeamId, 40, null);
+  }
+
+  nextTournament = {
+    ...nextTournament,
+    placementPointsAwarded: true,
+  };
+}
       const advanced = autoAdvanceTournament(nextTournament, nextPlayers);
 
       return {
@@ -1191,10 +1211,23 @@ function clearPlayerBanner(playerId) {
       const championTeam = t.teams.find((team) => team.id === t.grandFinal.winnerId);
       const secondTeam = t.teams.find((team) => team.id === t.grandFinal.loserId);
 
-      if (!t.placementPointsAwarded) {
-        p = awardTeamPoints(p, t.teams, t.grandFinal.winnerId, 80, "champion");
-        p = awardTeamPoints(p, t.teams, t.grandFinal.loserId, 60, null);
-      }
+    if (!t.placementPointsAwarded) {
+  const firstPlaceTeamId = t.grandFinal.winnerId;
+  const secondPlaceTeamId = t.grandFinal.loserId;
+  const thirdPlaceTeamId = t.thirdPlaceTeamId;
+
+  p = awardTeamPoints(p, t.teams, firstPlaceTeamId, 80, "champion");
+  p = awardTeamPoints(p, t.teams, secondPlaceTeamId, 60, null);
+
+  if (thirdPlaceTeamId) {
+    p = awardTeamPoints(p, t.teams, thirdPlaceTeamId, 40, null);
+  }
+
+  t = {
+    ...t,
+    placementPointsAwarded: true,
+  };
+}
 
       newChampionBanner = {
         teamId: championTeam?.id,
@@ -1261,11 +1294,7 @@ function clearPlayerBanner(playerId) {
         winnersAdvancing.length === 1 &&
         nextRedemptionPool.length === 1
       ) {
-        if (redemptionEliminated.length > 0 && !t.thirdPlaceAwarded) {
-          redemptionEliminated.forEach((teamId) => {
-            p = awardTeamPoints(p, t.teams, teamId, 40, null);
-          });
-        }
+        const thirdPlaceTeamId = redemptionEliminated[0] || null;
 
         const finalMatch = pairTeams(
           [winnersAdvancing[0], nextRedemptionPool[0]],
@@ -1275,6 +1304,7 @@ function clearPlayerBanner(playerId) {
 
         t = {
           ...t,
+          thirdPlaceTeamId,
           activeWinners: [],
           activeRedemption: [],
           winnersCarry: null,
