@@ -4202,7 +4202,7 @@ setTimeout(() => {
     hitmarker: false,
     target: {
       x: Math.random() * 85 + 5,
-      y: Math.random() * 80 + 8,
+      y: Math.random() * 55 + 8,
       createdAt: Date.now(),
       golden: Math.random() < 0.1,
     },
