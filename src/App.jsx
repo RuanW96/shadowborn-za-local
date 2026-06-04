@@ -151,6 +151,8 @@ const defaultState = {
   recommendations: [],
   rankRequests: [],
   sundayHistory: [],
+  reflexScores: [],
+  seasonHistory: [],
 };
 
 function getTeamSize(format) {
@@ -434,8 +436,116 @@ substituteTeamType: "winning",
   rank: "",
   proofUrl: "",
 });
+const [reflexGame, setReflexGame] = useState({
+  running: false,
+  finished: false,
+  fullscreen: false,
+  hitmarker: false,
+  targetHover: false,
+  saved: false,
+  countdown: null,
+  timeLeft: 60,
+  score: 0,
+  hits: 0,
+  misses: 0,
+  target: null,
+  startedAt: null,
+  reactionTimes: [],
+});
+const [crosshair, setCrosshair] = useState({
+  x: window.innerWidth / 2,
+  y: window.innerHeight / 2,
+});
+const [reflexDifficulty, setReflexDifficulty] = useState("Normal");
+const [weaponFx, setWeaponFx] = useState({
+  firing: false,
+  hitmarker: false,
+  scorePop: false, 
+  bonusHit: false,
+  lastShot: null,
+});
+useEffect(() => {
+  if (!reflexGame.running) return;
 
+  const timer = setInterval(() => {
+    setReflexGame((prev) => {
+      if (prev.timeLeft <= 1) {
+  const finishedGame = {
+    ...prev,
+    running: false,
+    finished: true,
+    saved: true,
+    timeLeft: 0,
+    target: null,
+  };
+  if (!prev.saved) {
+  saveReflexScore(finishedGame);
+}
+  return finishedGame;
+}
+      return {
+        ...prev,
+        timeLeft: prev.timeLeft - 1,
+      };
+    });
+  }, 1000);
 
+  return () => clearInterval(timer);
+}, [reflexGame.running]);
+useEffect(() => {
+  if (reflexGame.countdown === null) return;
+  if (reflexGame.countdown <= 0) return;
+
+  const countdownTimer = setTimeout(() => {
+    setReflexGame((prev) => {
+      if (prev.countdown === 1) {
+        return {
+          ...prev,
+          countdown: null,
+          running: true,
+          timeLeft: 60,
+          target: {
+            x: 50,
+            y: 50,
+            createdAt: Date.now(),
+          },
+          startedAt: Date.now(),
+        };
+      }
+
+      return {
+        ...prev,
+        countdown: prev.countdown - 1,
+      };
+    });
+  }, 1000);
+
+  return () => clearTimeout(countdownTimer);
+}, [reflexGame.countdown]);
+useEffect(() => {
+  if (!reflexGame.running) return;
+
+  setTimeout(() => {
+    document.getElementById("reflex-game-arena")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, 100);
+}, [reflexGame.running]);
+useEffect(() => {
+  const handleMouseMove = (e) => {
+    setCrosshair({
+      x: e.clientX,
+      y: e.clientY,
+    });
+  };
+
+  window.addEventListener("mousemove", handleMouseMove);
+
+  return () => {
+    window.removeEventListener("mousemove", handleMouseMove);
+  };
+}, []);
   const players = (state.players || []).map((p) => ({
   codRank: "",
   ...p,
@@ -531,6 +641,8 @@ useEffect(() => {
           callouts: data.data.callouts || prev.callouts,
           recommendations: data.data.recommendations || prev.recommendations || [],
           rankRequests: data.data.rankRequests || prev.rankRequests || [],
+          reflexScores: data.data.reflexScores || prev.reflexScores || [],
+          seasonHistory: data.data.seasonHistory || prev.seasonHistory || [],
           championBanner: data.data.championBanner || prev.championBanner,
           poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
         };
@@ -572,6 +684,8 @@ useEffect(() => {
         callouts: data.data.callouts || [],
         recommendations: data.data.recommendations || [],
         rankRequests: data.data.rankRequests || [],
+        reflexScores: data.data.reflexScores || [],
+        seasonHistory: data.data.seasonHistory || [],
         poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
       });
     } else {
@@ -859,7 +973,56 @@ function chooseRankProof() {
     players: prev.players.filter((p) => p.id !== playerId),
   }));
 }
+function archiveSeasonAndReset() {
+  if (!canAdmin) return;
 
+  const seasonName = window.prompt(
+    "Season name?",
+    `BO7 Season ${new Date().toLocaleDateString()}`
+  );
+
+  if (!seasonName) return;
+
+  if (!window.confirm("Archive current Top 4 and reset leaderboard stats?")) return;
+
+  const top4 = [...players]
+    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name))
+    .slice(0, 4)
+    .map((p, index) => ({
+      position: index + 1,
+      playerId: p.id,
+      playerName: p.name,
+      points: p.points,
+      rank: getRank(p.points).name,
+      tournamentWins: p.tournamentWins,
+      wins: p.wins,
+      losses: p.losses,
+    }));
+
+  updateState((prev) => ({
+    ...prev,
+    seasonHistory: [
+      {
+        id: Date.now(),
+        seasonName,
+        endedAt: new Date().toLocaleString(),
+        top4,
+      },
+      ...(prev.seasonHistory || []),
+    ],
+    players: prev.players.map((p) => ({
+      ...p,
+      points: 0,
+      wins: 0,
+      losses: 0,
+      mvpPoints: 0,
+      activityPoints: 0,
+      tournamentWins: 0,
+    })),
+  }));
+
+  alert("Season archived and leaderboard stats reset.");
+}
 function resetPlayerStats(playerId) {
   if (!canAdmin) return;
 
@@ -1851,6 +2014,77 @@ async function postLeaderboardToDiscord() {
   } catch (error) {
     alert("Discord post failed: " + error.message);
   }
+}
+function playReflexSound(type) {
+  const audio = new Audio(
+    type === "hit"
+      ? "/sounds/reflex-hit.mp3"
+      : "/sounds/reflex-miss.mp3"
+  );
+
+  audio.volume = type === "hit" ? 0.45 : 0.25;
+  audio.play().catch(() => {});
+}
+function saveReflexScore(finalGame) {
+  if (finalGame.score === 0) return;
+  if (!loggedInPlayer) return;
+
+  const totalShots = finalGame.hits + finalGame.misses;
+  const accuracy =
+    totalShots > 0 ? Math.round((finalGame.hits / totalShots) * 100) : 0;
+
+  const avgReaction =
+    finalGame.reactionTimes.length > 0
+      ? Math.round(
+          finalGame.reactionTimes.reduce((a, b) => a + b, 0) /
+            finalGame.reactionTimes.length
+        )
+      : 0;
+
+  updateState((prev) => {
+  const existingScore = (prev.reflexScores || []).find(
+    (s) =>
+      s.playerName === loggedInPlayer.name &&
+      s.score === finalGame.score &&
+      s.avgReaction === avgReaction &&
+      s.difficulty === reflexDifficulty
+  );
+
+  if (existingScore) return prev;
+const existingBest = (prev.reflexScores || []).find(
+  (s) =>
+    s.playerName === loggedInPlayer.name &&
+    s.difficulty === reflexDifficulty
+);
+
+if (existingBest && existingBest.score >= finalGame.score) {
+  return prev;
+}
+  return {
+    ...prev,
+    reflexScores: [
+      {
+        id: Date.now(),
+        playerId: loggedInPlayer.id,
+        playerName: loggedInPlayer.name,
+        difficulty: reflexDifficulty,
+        score: finalGame.score,
+        hits: finalGame.hits,
+        misses: finalGame.misses,
+        accuracy,
+        avgReaction,
+        createdAt: new Date().toLocaleString(),
+      },
+      ...(prev.reflexScores || []).filter(
+  (s) =>
+    !(
+      s.playerName === loggedInPlayer.name &&
+      s.difficulty === reflexDifficulty
+    )
+),
+    ],
+  };
+});
 }
   function vote(optionId) {
     updateState((prev) => ({
@@ -2943,6 +3177,7 @@ const pendingCallout = state.callouts?.find(
       ["leaderboard", "Leaderboard", <Trophy size={18} />],
       ["players", "Players", <Users size={18} />],
       ["callouts", "Call-outs", <Swords size={18} />],
+      ["reflex", "Reflex Range", <Target size={18} />],
       ["tournament", "Tournament", <Crown size={18} />],
       ["bracket", "Bracket", <Flame size={18} />],
       ["hall", "Hall of Fame", <Star size={18} />],
@@ -3044,30 +3279,972 @@ const pendingCallout = state.callouts?.find(
             </div>
           </>
         )}
+  {tab === "reflex" && (      
+<button
+  type="button"
+  onClick={() => {
+    setReflexGame({
+      running: false,
+      finished: false,
+      fullscreen: true,
+      hitmarker: false,
+      countdown: 10,
+      timeLeft: 60,
+      score: 0,
+      hits: 0,
+      misses: 0,
+      target: null,
+      startedAt: null,
+      reactionTimes: [],
+    });
+    setTimeout(() => {
+  document.getElementById("reflex-countdown-arena")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}, 100);
+  }}
+  style={buttonStyle(true, false)}
+>
+  Start Fullscreen Warm-up
+</button>
+)}
+{reflexGame.countdown !== null && (
+  <div
+  id="reflex-countdown-area"
+    style={{
+      marginTop: 20,
+      fontSize: 180,
+      fontWeight: 900,
+      letterSpacing: 4,
+      textAlign: "center",
+      color: "#facc15",
+      textShadow: "0 0 30px rgba(250,204,21,0.8)",
+    }}
+  >
+    {reflexGame.countdown}
+  </div>
+)}
+{tab === "reflex" && (
+  <>
+<div
+  style={{
+    display: "flex",
+    gap: 20,
+    marginTop: 15,
+    marginBottom: 15,
+    fontWeight: 700,
+  }}
+>
+  <div>⏱️ Time: {reflexGame.timeLeft}s</div>
+  <div>🎯 Score: {reflexGame.score}</div>
+  <div>✅ Hits: {reflexGame.hits}</div>
+  <div>❌ Misses: {reflexGame.misses}</div>
+</div>
+<div>
+  🎯 Accuracy:{" "}
+  {reflexGame.hits + reflexGame.misses > 0
+    ? Math.round((reflexGame.hits / (reflexGame.hits + reflexGame.misses)) * 100)
+    : 0}
+  %
+</div>
+<div>
+  ⚡ Avg Reaction:{" "}
+  {reflexGame.reactionTimes.length > 0
+    ? Math.round(
+        reflexGame.reactionTimes.reduce((a, b) => a + b, 0) /
+          reflexGame.reactionTimes.length
+      )
+    : 0}
+  ms
+</div>
+  </>
+)}
+{reflexGame.running && reflexGame.target && (
+  <div
+  id="reflex-game-arena"
+  onClick={(e) => {
+  if (e.target.id !== "reflex-game-arena") return;
 
+  alert("MISS CLICK WORKS");
+
+  playReflexSound("miss");
+setWeaponFx({
+  firing: true,
+  lastShot: Date.now(),
+});
+
+setTimeout(() => {
+  setWeaponFx((prev) => ({
+    ...prev,
+    firing: false,
+  }));
+}, 90);
+  setReflexGame((prev) => ({
+    ...prev,
+    misses: prev.misses + 1,
+  }));
+}}
+  style={{
+    position: "relative",
+    width: "100%",
+    height: "78vh",
+    marginTop: 20,
+    borderRadius: 20,
+    background: "#0a0612",
+    border: "2px solid #7c3aed",
+    overflow: "hidden",
+    cursor: "crosshair",
+  }}
+>
+    <div
+    onClick={(e) => {
+  e.stopPropagation();
+  
+    const reactionTime =
+      Date.now() - reflexGame.target.createdAt;
+
+    setReflexGame((prev) => ({
+      ...prev,
+      score: prev.score + 1,
+      hits: prev.hits + 1,
+      reactionTimes: [
+        ...prev.reactionTimes,
+        reactionTime,
+      ],
+      target: {
+        x: Math.random() * 85 + 5,
+        y: Math.random() * 85 + 5,
+        createdAt: Date.now(),
+      },
+    }));
+  }}
+  onMouseEnter={() =>
+  setReflexGame((prev) => ({ ...prev, targetHover: true }))
+}
+onMouseLeave={() =>
+  setReflexGame((prev) => ({ ...prev, targetHover: false }))
+}
+  style={{
+    position: "absolute",
+    left: `${reflexGame.target.x}%`,
+    top: `${reflexGame.target.y}%`,
+    width:
+  reflexDifficulty === "Easy"
+    ? 80
+    : reflexDifficulty === "Hard"
+    ? 40
+    : reflexDifficulty === "Insane"
+    ? 25
+    : 60,
+height:
+  reflexDifficulty === "Easy"
+    ? 80
+    : reflexDifficulty === "Hard"
+    ? 40
+    : reflexDifficulty === "Insane"
+    ? 25
+    : 60,
+    borderRadius: "50%",
+    background: "#ef4444",
+    transform: "translate(-50%, -50%)",
+    boxShadow: "0 0 25px rgba(239,68,68,0.8)",
+    cursor: "crosshair",
+  }}
+>
+  {reflexGame.hitmarker && (
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+        fontSize: 42,
+        fontWeight: 900,
+        color: "white",
+        textShadow: "0 0 15px rgba(255,255,255,0.9)",
+        pointerEvents: "none",
+      }}
+    >
+      ✕
+    </div>
+  )}
+</div>
+  </div>
+)}
+{reflexGame.finished && (
+  <div
+    style={{
+      marginTop: 20,
+      padding: 20,
+      borderRadius: 20,
+      background: "rgba(124,58,237,0.15)",
+      border: "1px solid rgba(124,58,237,0.4)",
+    }}
+  >
+    <h2>🏆 Session Complete</h2>
+
+    <div>🎯 Score: {reflexGame.score}</div>
+    <div>✅ Hits: {reflexGame.hits}</div>
+    <div>❌ Misses: {reflexGame.misses}</div>
+
+    <div>
+      🎯 Accuracy:{" "}
+      {reflexGame.hits + reflexGame.misses > 0
+        ? Math.round(
+            (reflexGame.hits /
+              (reflexGame.hits + reflexGame.misses)) *
+              100
+          )
+        : 0}
+      %
+    </div>
+
+    <div>
+      ⚡ Avg Reaction:{" "}
+      {reflexGame.reactionTimes.length > 0
+        ? Math.round(
+            reflexGame.reactionTimes.reduce((a, b) => a + b, 0) /
+              reflexGame.reactionTimes.length
+          )
+        : 0}
+      ms
+    </div>
+  </div>
+)}
+{tab === "reflex" && (
+  <div style={cardStyle()}>
+    <h2>🏆 Reflex Leaderboards</h2>
+{(() => {
+  const reflexChampion = (state.reflexScores || [])
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.accuracy - a.accuracy ||
+        a.avgReaction - b.avgReaction
+    )[0];
+
+  if (!reflexChampion) return null;
+
+  return (
+    <div
+      style={{
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 20,
+        borderRadius: 16,
+        background:
+          "linear-gradient(90deg, rgba(250,204,21,0.18), rgba(124,58,237,0.18))",
+        border: "1px solid rgba(250,204,21,0.35)",
+        boxShadow: "0 0 25px rgba(250,204,21,0.15)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#facc15",
+          marginBottom: 8,
+        }}
+      >
+        CURRENT REFLEX CHAMPION
+      </div>
+
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 800,
+        }}
+      >
+        {reflexChampion.playerName}
+      </div>
+
+      <div
+        style={{
+          marginTop: 6,
+          opacity: 0.85,
+        }}
+      >
+        <span
+  style={{
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    background:
+      reflexChampion.difficulty === "Easy"
+        ? "rgba(34,197,94,0.22)"
+        : reflexChampion.difficulty === "Normal"
+        ? "rgba(59,130,246,0.22)"
+        : reflexChampion.difficulty === "Hard"
+        ? "rgba(249,115,22,0.22)"
+        : "rgba(239,68,68,0.22)",
+    color:
+      reflexChampion.difficulty === "Easy"
+        ? "#86efac"
+        : reflexChampion.difficulty === "Normal"
+        ? "#93c5fd"
+        : reflexChampion.difficulty === "Hard"
+        ? "#fdba74"
+        : "#fca5a5",
+  }}
+>
+  {reflexChampion.difficulty}
+</span>{" "}
+• 🎯 {reflexChampion.score} pts • ⚡{" "}
+        {reflexChampion.avgReaction}ms
+      </div>
+    </div>
+  );
+})()}
+{canAdmin && (
+  <button
+    type="button"
+    onClick={() => {
+      if (!window.confirm("Clear all Reflex scores?")) return;
+
+      updateState((prev) => ({
+        ...prev,
+        reflexScores: [],
+      }));
+    }}
+    style={{
+      ...buttonStyle(false, false),
+      marginBottom: 14,
+      background: "rgba(239,68,68,0.25)",
+    }}
+  >
+    🗑 Clear Reflex Scores
+  </button>
+)}
+
+{["Easy", "Normal", "Hard", "Insane"].map((difficulty) => {
+  const scores = (state.reflexScores || [])
+    .filter((s) => s.difficulty === difficulty)
+    .sort(
+  (a, b) =>
+    b.score - a.score ||
+    b.accuracy - a.accuracy ||
+    a.avgReaction - b.avgReaction
+)
+.slice(0, 10);
+
+  return (
+    <div
+      key={difficulty}
+      style={{
+        marginTop: 18,
+        padding: 14,
+        borderRadius: 14,
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(124,58,237,0.25)",
+      }}
+    >
+      <h3>🏆 {difficulty} Leaderboard</h3>
+
+      {scores.length === 0 ? (
+        <div style={{ color: "#c4b5fd" }}>No scores yet</div>
+      ) : (
+        scores.map((score, index) => (
+          <div
+            key={score.id}
+            style={{
+              padding: 12,
+              marginBottom: 8,
+              borderRadius: 10,
+              background:
+  index === 0
+    ? "rgba(250,204,21,0.16)"
+    : index === 1
+    ? "rgba(226,232,240,0.14)"
+    : index === 2
+    ? "rgba(180,83,9,0.16)"
+    : "rgba(255,255,255,0.06)",
+    border:
+  index === 0
+    ? "1px solid rgba(250,204,21,0.55)"
+    : index === 1
+    ? "1px solid rgba(226,232,240,0.45)"
+    : index === 2
+    ? "1px solid rgba(180,83,9,0.45)"
+    : "1px solid rgba(255,255,255,0.08)",
+boxShadow:
+  index === 0
+    ? "0 0 20px rgba(250,204,21,0.18)"
+    : index === 1
+    ? "0 0 16px rgba(226,232,240,0.14)"
+    : index === 2
+    ? "0 0 16px rgba(180,83,9,0.14)"
+    : "none",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <strong>
+              {index === 0
+                ? "🥇"
+                : index === 1
+                ? "🥈"
+                : index === 2
+                ? "🥉"
+                : `#${index + 1}`}{" "}
+              {score.playerName}
+            </strong>
+
+            <span>
+              🎯 {score.score} pts • ✅ {score.accuracy}% • ⚡{" "}
+{score.avgReaction}ms • 📅 {score.createdAt}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+})}
+  </div>
+)}
         {tab === "leaderboard" && (
   <div style={{ display: "grid", gap: 12 }}>
     
     {canAdmin ? (
-      <button
-        type="button"
-        onClick={postLeaderboardToDiscord}
-        style={{
-          ...buttonStyle(true, false),
-          background: "linear-gradient(135deg, #7f1d1d, #dc2626)",
-          marginBottom: 8,
-        }}
-      >
-        <MessageCircle size={14} /> Post Leaderboard to Discord
-      </button>
-    ) : null}
-          
+  <>
+    <button
+      type="button"
+      onClick={postLeaderboardToDiscord}
+      style={{
+        ...buttonStyle(true, false),
+        background: "linear-gradient(135deg, #7f1d1d, #dc2626)",
+        marginBottom: 8,
+      }}
+    >
+      <MessageCircle size={14} /> Post Leaderboard to Discord
+    </button>
+
+    <button
+      type="button"
+      onClick={archiveSeasonAndReset}
+      style={{
+        ...buttonStyle(true, false),
+        background: "linear-gradient(135deg, #92400e, #f59e0b)",
+        marginBottom: 8,
+      }}
+    >
+      🏆 Archive Season & Reset Leaderboard
+    </button>
+  </>
+) : null}
+          {(state.seasonHistory || []).length > 0 && (
+  <div style={{ ...cardStyle(), marginBottom: 18 }}>
+    <h2>👑 Season Legacy</h2>
+
+    {Object.entries(
+      (state.seasonHistory || [])
+        .flatMap((season) => season.top4 || [])
+        .reduce((acc, player) => {
+          acc[player.playerName] = (acc[player.playerName] || 0) + 1;
+          return acc;
+        }, {})
+    )
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([playerName, count], index) => (
+        <div
+          key={playerName}
+          style={{
+            padding: 10,
+            marginTop: 8,
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.05)",
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
+          <strong>
+            {index === 0 ? "👑" : `#${index + 1}`} {playerName}
+          </strong>
+          <span>{count} Top 4 finishes</span>
+        </div>
+      ))}
+  </div>
+)}
          {sortedPlayers.map((player, index) => (
   <LeaderboardCard key={player.id} player={player} index={index} />
 ))}   
+{(state.seasonHistory || []).length > 0 && (
+  <div style={{ ...cardStyle(), marginTop: 18 }}>
+    <h2>🏆 Season Leaderboard History</h2>
+
+    {(state.seasonHistory || []).map((season) => (
+      <div
+        key={season.id}
+        style={{
+          marginTop: 14,
+          padding: 14,
+          borderRadius: 14,
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(250,204,21,0.25)",
+        }}
+      >
+        <h3>{season.seasonName}</h3>
+        <div style={{ color: "#c4b5fd", marginBottom: 10 }}>
+          Ended: {season.endedAt}
+        </div>
+
+        {season.top4.map((p) => (
+          <div key={`${season.id}-${p.playerId}`}>
+            #{p.position} {p.playerName} — {p.points} pts — {p.rank}
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+)}
           </div>
         )}
+{reflexGame.fullscreen && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 9999,
+      background: "radial-gradient(circle at center, rgba(124,58,237,0.25), #05020a 65%)",
+      color: "white",
+      padding: 24,
+      boxSizing: "border-box",
+      overflow: "hidden",
+    }}
+  >
+    <button
+      type="button"
+      onClick={() =>
+        setReflexGame((prev) => ({
+          ...prev,
+          fullscreen: false,
+          running: false,
+          countdown: null,
+          target: null,
+        }))
+      }
+      style={{
+        ...buttonStyle(false, false),
+        position: "absolute",
+        top: 20,
+        right: 20,
+        zIndex: 10001,
+      }}
+    >
+      Exit
+    </button>
 
+    <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 12 }}>
+      🎯 Shadowborn Reflex Range
+      <div
+  style={{
+    display: "flex",
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 10,
+  }}
+>
+  {["Easy", "Normal", "Hard", "Insane"].map((difficulty) => (
+    <button
+      key={difficulty}
+      onClick={() => setReflexDifficulty(difficulty)}
+      style={{
+        padding: "8px 14px",
+        borderRadius: 8,
+        border:
+          reflexDifficulty === difficulty
+            ? "2px solid #facc15"
+            : "1px solid #7c3aed",
+        background:
+          reflexDifficulty === difficulty
+            ? "#facc15"
+            : "rgba(124,58,237,0.2)",
+        color:
+          reflexDifficulty === difficulty
+            ? "#000"
+            : "#fff",
+        cursor: "pointer",
+        fontWeight: 700,
+      }}
+    >
+      {difficulty}
+    </button>
+  ))}
+</div>
+    </div>
+
+    <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontWeight: 800 }}>
+      <div>⏱️ Time: {reflexGame.timeLeft}s</div>
+      <div>🎯 Score: {reflexGame.score}</div>
+      <div>✅ Hits: {reflexGame.hits}</div>
+      <div>❌ Misses: {reflexGame.misses}</div>
+      <div>🎮 Difficulty: {reflexDifficulty}</div>
+    </div>
+
+    {reflexGame.countdown !== null && (
+      <div
+        style={{
+          height: "75vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 180,
+          fontWeight: 900,
+          color: "#facc15",
+          textShadow: "0 0 40px rgba(250,204,21,0.95)",
+        }}
+      >
+        {reflexGame.countdown}
+      </div>
+    )}
+{reflexGame.fullscreen && reflexGame.running && (
+  <div
+    style={{
+      position: "fixed",
+      left: crosshair.x,
+      top: crosshair.y,
+      width: 34,
+      height: 34,
+      transform: weaponFx.firing
+  ? "translate(-50%, -60%) scale(1.12)"
+  : "translate(-50%, -50%) scale(1)",
+      pointerEvents: "none",
+      zIndex: 10002,
+    }}
+  >
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: 0,
+        width: 2,
+        height: 11,
+        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
+        transform: "translateX(-50%)",
+        boxShadow: reflexGame.targetHover
+  ? "0 0 12px rgba(239,68,68,1)"
+  : "0 0 8px rgba(255,255,255,0.9)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        bottom: 0,
+        width: 2,
+        height: 11,
+        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
+        transform: "translateX(-50%)",
+        boxShadow: reflexGame.targetHover
+  ? "0 0 12px rgba(239,68,68,1)"
+  : "0 0 8px rgba(255,255,255,0.9)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        top: "50%",
+        width: 11,
+        height: 2,
+        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
+        transform: "translateY(-50%)",
+        boxShadow: reflexGame.targetHover
+  ? "0 0 12px rgba(239,68,68,1)"
+  : "0 0 8px rgba(255,255,255,0.9)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        right: 0,
+        top: "50%",
+        width: 11,
+        height: 2,
+        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
+        transform: "translateY(-50%)",
+        boxShadow: reflexGame.targetHover
+  ? "0 0 12px rgba(239,68,68,1)"
+  : "0 0 8px rgba(255,255,255,0.9)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        width: 4,
+        height: 4,
+        borderRadius: "50%",
+        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
+        transform: "translate(-50%, -50%)",
+        boxShadow: "0 0 10px rgba(255,255,255,1)",
+      }}
+    />
+    {weaponFx.hitmarker && (
+  <div
+    style={{
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: 42,
+      height: 42,
+      transform: "translate(-50%, -50%)",
+      pointerEvents: "none",
+    }}
+  >
+    <div
+      style={{
+        position: "absolute",
+        left: 6,
+        top: 6,
+        width: 14,
+        height: 3,
+        background: "#ffffff",
+        transform: "rotate(45deg)",
+        boxShadow: "0 0 10px rgba(255,255,255,1)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        right: 6,
+        top: 6,
+        width: 14,
+        height: 3,
+        background: "#ffffff",
+        transform: "rotate(-45deg)",
+        boxShadow: "0 0 10px rgba(255,255,255,1)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        left: 6,
+        bottom: 6,
+        width: 14,
+        height: 3,
+        background: "#ffffff",
+        transform: "rotate(-45deg)",
+        boxShadow: "0 0 10px rgba(255,255,255,1)",
+      }}
+    />
+    <div
+      style={{
+        position: "absolute",
+        right: 6,
+        bottom: 6,
+        width: 14,
+        height: 3,
+        background: "#ffffff",
+        transform: "rotate(45deg)",
+        boxShadow: "0 0 10px rgba(255,255,255,1)",
+      }}
+    />
+  </div>
+)}
+{weaponFx.hitmarker && (
+  <div
+    style={{
+      position: "fixed",
+      left: crosshair.x,
+      top: crosshair.y,
+      transform: "translate(-50%, -50%)",
+      color: "#ffffff",
+      fontSize: 32,
+      fontWeight: "bold",
+      pointerEvents: "none",
+      zIndex: 10003,
+      textShadow: "0 0 10px white",
+    }}
+  >
+    ✕
+  </div>
+)}
+  </div>
+)}
+{weaponFx.scorePop && (
+  <div
+    style={{
+      position: "fixed",
+      left: crosshair.x + 22,
+      top: crosshair.y - 35,
+      transform: "translate(-50%, -50%)",
+      color: "#22c55e",
+      fontSize: 28,
+      fontWeight: 900,
+      pointerEvents: "none",
+      zIndex: 10004,
+      textShadow: "0 0 12px rgba(34,197,94,1)",
+    }}
+  >
+    {reflexGame.target?.golden ? "+3" : "+1"}
+  </div>
+)}
+{weaponFx.bonusHit && (
+  <div
+    style={{
+      position: "fixed",
+      left: "50%",
+      top: "25%",
+      transform: "translate(-50%, -50%)",
+      color: "#facc15",
+      fontSize: 42,
+      fontWeight: 900,
+      textShadow: "0 0 20px #facc15",
+      pointerEvents: "none",
+      zIndex: 10006,
+    }}
+  >
+    ⭐ BONUS TARGET! +3
+  </div>
+)}
+{reflexGame.fullscreen && reflexGame.running && (
+  <img
+    src="/weapons/fps-rifle.png"
+    alt="First person rifle"
+    style={{
+      position: "fixed",
+      right: weaponFx.firing ? "-35px" : "-15px",
+      bottom: weaponFx.firing ? "-35px" : "-20px",
+      width: weaponFx.firing ? 620 : 600,
+      maxWidth: "55vw",
+      transform: weaponFx.firing
+        ? "rotate(-1deg) scale(1.03)"
+        : "rotate(0deg) scale(1)",
+      transformOrigin: "bottom right",
+      pointerEvents: "none",
+      zIndex: 10002,
+      userSelect: "none",
+      filter: "drop-shadow(0 0 25px rgba(0,0,0,0.9))",
+    }}
+  />
+)}
+{reflexGame.fullscreen && reflexGame.running && weaponFx.firing && (
+  <img
+    src="/weapons/muzzle-flash.png"
+    alt="Muzzle Flash"
+    style={{
+      position: "fixed",
+      right: "14.5%",
+      bottom: "24.8%",
+      width: 95,
+      pointerEvents: "none",
+      zIndex: 10005,
+      transform: "rotate(-8deg)",
+      filter: "drop-shadow(0 0 15px rgba(250,204,21,1))",
+      userSelect: "none",
+    }}
+  />
+)}
+    {reflexGame.running && reflexGame.target && (
+      <div
+        id="reflex-game-arena"
+        onClick={() => {
+  playReflexSound("miss");
+
+  setReflexGame((prev) => ({
+    ...prev,
+    misses: prev.misses + 1,
+  }));
+}}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "calc(100vh - 120px)",
+          marginTop: 18,
+          borderRadius: 18,
+          background: "#0a0612",
+          border: "2px solid #7c3aed",
+          overflow: "hidden",
+          cursor: "none",
+        }}
+      >
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+
+            const reactionTime = Date.now() - reflexGame.target.createdAt;
+            playReflexSound("hit");
+             hitmarker: true,
+            setWeaponFx({
+  firing: true,
+  hitmarker: true,
+  scorePop: true,
+  bonusHit: reflexGame.target.golden,
+  lastShot: Date.now(),
+});
+
+setTimeout(() => {
+  setWeaponFx((prev) => ({
+    ...prev,
+    firing: false,
+     hitmarker: false,
+     scorePop: false,
+     bonusHit: false,
+  }));
+}, 140);
+
+            setReflexGame((prev) => ({
+  ...prev,
+  score: prev.score + (reflexGame.target.golden ? 3 : 1),
+  hitmarker: true,
+  hits: prev.hits + 1,
+  reactionTimes: [...prev.reactionTimes, reactionTime],
+}));
+
+setTimeout(() => {
+  setReflexGame((prev) => ({
+    ...prev,
+    hitmarker: false,
+    target: {
+      x: Math.random() * 85 + 5,
+      y: Math.random() * 80 + 8,
+      createdAt: Date.now(),
+      golden: Math.random() < 0.1,
+    },
+  }));
+}, 150);
+          }}
+          style={{
+            position: "absolute",
+            left: `${reflexGame.target.x}%`,
+            top: `${reflexGame.target.y}%`,
+            width:
+  reflexDifficulty === "Easy"
+    ? 80
+    : reflexDifficulty === "Hard"
+    ? 40
+    : reflexDifficulty === "Insane"
+    ? 25
+    : 60,
+height:
+  reflexDifficulty === "Easy"
+    ? 80
+    : reflexDifficulty === "Hard"
+    ? 40
+    : reflexDifficulty === "Insane"
+    ? 25
+    : 60,
+      
+            borderRadius: "50%",
+            background: reflexGame.target.golden
+  ? "radial-gradient(circle, #fde047 0%, #facc15 45%, #ca8a04 100%)"
+  : "#ef4444",
+            transform: "translate(-50%, -50%)",
+            boxShadow: reflexGame.target.golden
+  ? "0 0 25px #facc15, 0 0 50px #facc15"
+  : "0 0 25px rgba(239,68,68,0.8)",
+            cursor: "crosshair",
+          }}
+        />
+      </div>
+    )}
+  </div>
+)}
         {tab === "players" && (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.25fr 0.75fr", gap: 16 }}>
             <div style={{ display: "grid", gap: 12 }}>
