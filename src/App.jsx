@@ -3472,7 +3472,7 @@ height:
 </div>
   </div>
 )}
-{reflexGame.finished && (
+{tab === "reflex" && reflexGame.finished && (
   <div
     style={{
       marginTop: 20,
