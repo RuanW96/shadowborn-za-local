@@ -495,6 +495,14 @@ useEffect(() => {
 useEffect(() => {
   if (reflexGame.countdown === null) return;
   if (reflexGame.countdown <= 0) return;
+  useEffect(() => {
+  if (tab !== "reflex" && reflexGame.finished) {
+    setReflexGame((prev) => ({
+      ...prev,
+      finished: false,
+    }));
+  }
+}, [tab]);
 
   const countdownTimer = setTimeout(() => {
     setReflexGame((prev) => {
