@@ -151,7 +151,6 @@ const defaultState = {
   recommendations: [],
   rankRequests: [],
   sundayHistory: [],
-  reflexScores: [],
   seasonHistory: [],
 };
 
@@ -436,127 +435,14 @@ substituteTeamType: "winning",
   rank: "",
   proofUrl: "",
 });
-const [reflexGame, setReflexGame] = useState({
-  running: false,
-  finished: false,
-  fullscreen: false,
-  hitmarker: false,
-  targetHover: false,
-  saved: false,
-  countdown: null,
-  timeLeft: 60,
-  score: 0,
-  hits: 0,
-  misses: 0,
-  target: null,
-  startedAt: null,
-  reactionTimes: [],
-});
-const [crosshair, setCrosshair] = useState({
-  x: window.innerWidth / 2,
-  y: window.innerHeight / 2,
-});
-const [reflexDifficulty, setReflexDifficulty] = useState("Normal");
-const [weaponFx, setWeaponFx] = useState({
-  firing: false,
-  hitmarker: false,
-  scorePop: false, 
-  bonusHit: false,
-  lastShot: null,
-});
-useEffect(() => {
-  if (!reflexGame.running) return;
-
-  const timer = setInterval(() => {
-    setReflexGame((prev) => {
-      if (prev.timeLeft <= 1) {
-  const finishedGame = {
-    ...prev,
-    running: false,
-    finished: true,
-    saved: true,
-    timeLeft: 0,
-    target: null,
-  };
-  if (!prev.saved) {
-  saveReflexScore(finishedGame);
-}
-  return finishedGame;
-}
-      return {
-        ...prev,
-        timeLeft: prev.timeLeft - 1,
-      };
-    });
-  }, 1000);
-
-  return () => clearInterval(timer);
-}, [reflexGame.running]);
-useEffect(() => {
-  if (tab !== "reflex" && reflexGame.finished) {
-    setReflexGame((prev) => ({
-      ...prev,
-      finished: false,
-    }));
-  }
-}, [tab]);
-useEffect(() => {
-  if (reflexGame.countdown === null) return;
-  if (reflexGame.countdown <= 0) return;
-
-
-  const countdownTimer = setTimeout(() => {
-    setReflexGame((prev) => {
-      if (prev.countdown === 1) {
-        return {
-          ...prev,
-          countdown: null,
-          running: true,
-          timeLeft: 60,
-          target: {
-            x: 50,
-            y: 50,
-            createdAt: Date.now(),
-          },
-          startedAt: Date.now(),
-        };
-      }
-
-      return {
-        ...prev,
-        countdown: prev.countdown - 1,
-      };
-    });
-  }, 1000);
-
-  return () => clearTimeout(countdownTimer);
-}, [reflexGame.countdown]);
-useEffect(() => {
-  if (!reflexGame.running) return;
-
-  setTimeout(() => {
-    document.getElementById("reflex-game-arena")?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }, 100);
-}, [reflexGame.running]);
-useEffect(() => {
-  const handleMouseMove = (e) => {
-    setCrosshair({
-      x: e.clientX,
-      y: e.clientY,
-    });
-  };
-
-  window.addEventListener("mousemove", handleMouseMove);
-
-  return () => {
-    window.removeEventListener("mousemove", handleMouseMove);
-  };
-}, []);
   const players = (state.players || []).map((p) => ({
   codRank: "",
+  teamRole: "challenger",
+  playStyle: "",
+  competitiveRating: 0,
+  crAdjustment: 0,
+  trainingAttended: 0,
+  trainingMissed: 0,
   ...p,
 }));
   const tournament = state.tournament || emptyTournament;
@@ -565,6 +451,46 @@ useEffect(() => {
     () => [...players].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name)),
     [players]
   );
+
+  const competitivePlayers = useMemo(
+    () =>
+      [...players].sort((a, b) => {
+        const scoreA =
+          Number(a.competitiveRating || 0) ||
+          Number(a.points || 0) +
+            Number(a.wins || 0) * 5 +
+            Number(a.mvpPoints || 0) +
+            Number(a.tournamentWins || 0) * 25 -
+            Number(a.losses || 0) * 2 +
+            Number(a.trainingAttended || 0) * 3 -
+            Number(a.trainingMissed || 0) * 5;
+
+        const scoreB =
+          Number(b.competitiveRating || 0) ||
+          Number(b.points || 0) +
+            Number(b.wins || 0) * 5 +
+            Number(b.mvpPoints || 0) +
+            Number(b.tournamentWins || 0) * 25 -
+            Number(b.losses || 0) * 2 +
+            Number(b.trainingAttended || 0) * 3 -
+            Number(b.trainingMissed || 0) * 5;
+
+        return scoreB - scoreA || a.name.localeCompare(b.name);
+      }),
+    [players]
+  );
+
+  const aTeamPlayers = competitivePlayers.filter((p) => p.teamRole === "a-team").slice(0, 4);
+  const promotionTeam = players.filter(
+  (p) => p.teamRole === "promotion"
+);
+
+const challengers = players.filter(
+  (p) => !["ateam", "promotion"].includes(p.teamRole)
+);
+  const challengerPlayers = competitivePlayers.filter((p) => p.teamRole !== "a-team");
+  const promotionZonePlayers = challengerPlayers.slice(0, 4);
+  const lowestATeamPlayer = aTeamPlayers.length ? aTeamPlayers[aTeamPlayers.length - 1] : null;
 
 
   const sortedRecommendations = useMemo(
@@ -624,6 +550,47 @@ const filteredCompletedCallouts =
   const loggedInPlayer = auth ? players.find((p) => p.id === auth.playerId) : null;
   const canAdmin = loggedInPlayer && (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
 
+  function getRawCompetitiveScore(player) {
+  return (
+    Number(player.points || 0) +
+    Number(player.wins || 0) * 5 +
+    Number(player.mvpPoints || 0) +
+    Number(player.tournamentWins || 0) * 25 -
+    Number(player.losses || 0) * 2 +
+    Number(player.trainingAttended || 0) * 3 -
+    Number(player.trainingMissed || 0) * 5
+  );
+}
+
+function getCompetitiveScore(player) {
+  return getRawCompetitiveScore(player) + Number(player.crAdjustment || 0);
+}
+
+  function setTeamRole(playerId, teamRole) {
+    if (!canAdmin) return;
+
+    if (teamRole === "a-team") {
+      const currentATeamCount = players.filter((p) => p.teamRole === "a-team" && p.id !== playerId).length;
+      if (currentATeamCount >= 4) {
+        alert("A-Team can only have 4 players. Move someone to Challengers first.");
+        return;
+      }
+    }
+
+    updatePlayer(playerId, "teamRole", teamRole);
+  }
+
+  function updateTraining(playerId, type, amount) {
+    if (!canAdmin) return;
+
+    const player = players.find((p) => p.id === playerId);
+    if (!player) return;
+
+    const field = type === "attended" ? "trainingAttended" : "trainingMissed";
+    const current = Number(player[field] || 0);
+    updatePlayer(playerId, field, Math.max(0, current + amount));
+  }
+
   useEffect(() => {
   loadCloudState();
 }, []);
@@ -650,7 +617,6 @@ useEffect(() => {
           callouts: data.data.callouts || prev.callouts,
           recommendations: data.data.recommendations || prev.recommendations || [],
           rankRequests: data.data.rankRequests || prev.rankRequests || [],
-          reflexScores: data.data.reflexScores || prev.reflexScores || [],
           seasonHistory: data.data.seasonHistory || prev.seasonHistory || [],
           championBanner: data.data.championBanner || prev.championBanner,
           poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
@@ -693,7 +659,6 @@ useEffect(() => {
         callouts: data.data.callouts || [],
         recommendations: data.data.recommendations || [],
         rankRequests: data.data.rankRequests || [],
-        reflexScores: data.data.reflexScores || [],
         seasonHistory: data.data.seasonHistory || [],
         poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
       });
@@ -806,7 +771,7 @@ useEffect(() => {
         p.id === id
           ? {
               ...p,
-              [field]: ["points", "tournamentWins", "wins", "losses", "mvpPoints", "activityPoints"].includes(field)
+              [field]: ["points", "tournamentWins", "wins", "losses", "mvpPoints", "activityPoints", "competitiveRating", "crAdjustment", "trainingAttended", "trainingMissed"].includes(field)
                 ? Number(value) || 0
                 : value,
             }
@@ -959,6 +924,11 @@ function chooseRankProof() {
           activityPoints: 0,
           avatar: "",
           role: newPlayer.role,
+          teamRole: "challenger",
+          competitiveRating: 0,
+          playStyle: "",
+          trainingAttended: 0,
+          trainingMissed: 0,
           codRank: "",
         },
       ],
@@ -2024,77 +1994,6 @@ async function postLeaderboardToDiscord() {
     alert("Discord post failed: " + error.message);
   }
 }
-function playReflexSound(type) {
-  const audio = new Audio(
-    type === "hit"
-      ? "/sounds/reflex-hit.mp3"
-      : "/sounds/reflex-miss.mp3"
-  );
-
-  audio.volume = type === "hit" ? 0.45 : 0.25;
-  audio.play().catch(() => {});
-}
-function saveReflexScore(finalGame) {
-  if (finalGame.score === 0) return;
-  if (!loggedInPlayer) return;
-
-  const totalShots = finalGame.hits + finalGame.misses;
-  const accuracy =
-    totalShots > 0 ? Math.round((finalGame.hits / totalShots) * 100) : 0;
-
-  const avgReaction =
-    finalGame.reactionTimes.length > 0
-      ? Math.round(
-          finalGame.reactionTimes.reduce((a, b) => a + b, 0) /
-            finalGame.reactionTimes.length
-        )
-      : 0;
-
-  updateState((prev) => {
-  const existingScore = (prev.reflexScores || []).find(
-    (s) =>
-      s.playerName === loggedInPlayer.name &&
-      s.score === finalGame.score &&
-      s.avgReaction === avgReaction &&
-      s.difficulty === reflexDifficulty
-  );
-
-  if (existingScore) return prev;
-const existingBest = (prev.reflexScores || []).find(
-  (s) =>
-    s.playerName === loggedInPlayer.name &&
-    s.difficulty === reflexDifficulty
-);
-
-if (existingBest && existingBest.score >= finalGame.score) {
-  return prev;
-}
-  return {
-    ...prev,
-    reflexScores: [
-      {
-        id: Date.now(),
-        playerId: loggedInPlayer.id,
-        playerName: loggedInPlayer.name,
-        difficulty: reflexDifficulty,
-        score: finalGame.score,
-        hits: finalGame.hits,
-        misses: finalGame.misses,
-        accuracy,
-        avgReaction,
-        createdAt: new Date().toLocaleString(),
-      },
-      ...(prev.reflexScores || []).filter(
-  (s) =>
-    !(
-      s.playerName === loggedInPlayer.name &&
-      s.difficulty === reflexDifficulty
-    )
-),
-    ],
-  };
-});
-}
   function vote(optionId) {
     updateState((prev) => ({
       ...prev,
@@ -2127,6 +2026,76 @@ const glowStyles = `
   }
 }
 `;
+function markTraining(playerId, type) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) =>
+      p.id === playerId
+        ? {
+            ...p,
+            trainingAttended:
+              type === "attended"
+                ? Number(p.trainingAttended || 0) + 1
+                : Number(p.trainingAttended || 0),
+            trainingMissed:
+              type === "missed"
+                ? Number(p.trainingMissed || 0) + 1
+                : Number(p.trainingMissed || 0),
+          }
+        : p
+    ),
+  }));
+}
+
+function resetTraining(playerId) {
+  if (!canAdmin) return;
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) =>
+      p.id === playerId
+        ? { ...p, trainingAttended: 0, trainingMissed: 0 }
+        : p
+    ),
+  }));
+}
+function resetPlayerCR(playerId) {
+  if (!canAdmin) return;
+
+  const player = players.find((p) => p.id === playerId);
+  if (!player) return;
+
+  const rawCR = getRawCompetitiveScore(player);
+
+  updatePlayer(playerId, "crAdjustment", -rawCR);
+}
+
+function resetAllCR() {
+  if (!canAdmin) return;
+
+  if (!window.confirm("Reset CR for all players? Leaderboard points will stay the same.")) return;
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) => {
+      const rawCR =
+        Number(p.points || 0) +
+        Number(p.wins || 0) * 5 +
+        Number(p.mvpPoints || 0) +
+        Number(p.tournamentWins || 0) * 25 -
+        Number(p.losses || 0) * 2 +
+        Number(p.trainingAttended || 0) * 3 -
+        Number(p.trainingMissed || 0) * 5;
+
+      return {
+        ...p,
+        crAdjustment: -rawCR,
+      };
+    }),
+  }));
+}
   const appBg = {
     minHeight: "100vh",
     background:
@@ -2285,6 +2254,13 @@ const glowStyles = `
     <button type="button" onClick={() => resetPlayerStats(player.id)} style={buttonStyle(false, false)}>
       Reset Stats
     </button>
+    <button
+  type="button"
+  onClick={() => resetPlayerCR(player.id)}
+  style={buttonStyle(false, false)}
+>
+  📉 Reset CR
+</button>
 
     <button type="button" onClick={() => clearPlayerAvatar(player.id)} style={buttonStyle(false, false)}>
       Remove Avatar
@@ -2797,7 +2773,29 @@ const pendingCallout = state.callouts?.find(
             <h1 style={{ margin: 0, fontSize: isMobile ? 32 : 48 }}>
               {profilePlayer.name}
             </h1>
-
+{(loggedInPlayer?.id === profilePlayer.id || canAdmin) && (
+  <div style={{ marginTop: 12, maxWidth: 220 }}>
+    <select
+      value={profilePlayer.playStyle || ""}
+      onChange={(e) =>
+        updatePlayer(profilePlayer.id, "playStyle", e.target.value)
+      }
+      style={{
+        width: "100%",
+        padding: 10,
+        borderRadius: 10,
+        background: "rgba(255,255,255,0.08)",
+        border: "1px solid rgba(255,255,255,0.15)",
+        color: "#fff",
+      }}
+    >
+      <option value="">Select Play Style</option>
+      <option value="AR">🎯 AR</option>
+      <option value="SMG">⚡ SMG</option>
+      <option value="FLEX">🔀 FLEX</option>
+    </select>
+  </div>
+)}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
               <span style={badgeStyle("rgba(168,85,247,0.25)", "#d8b4fe")}>
                 {profilePlayer.role}
@@ -2805,6 +2803,18 @@ const pendingCallout = state.callouts?.find(
               <span style={badgeStyle(profileRank.glow, profileRank.color)}>
                 {profileRank.name}
               </span>
+              {profilePlayer.playStyle && (
+  <span
+    style={badgeStyle(
+      "rgba(250,204,21,0.15)",
+      "#facc15"
+    )}
+  >
+    {profilePlayer.playStyle === "AR" && "🎯 AR"}
+    {profilePlayer.playStyle === "SMG" && "⚡ SMG"}
+    {profilePlayer.playStyle === "FLEX" && "🔀 FLEX"}
+  </span>
+)}
             </div>
 
             <div style={{ marginTop: 18, fontSize: 22, fontWeight: 900, color: profileRank.color }}>
@@ -3184,9 +3194,9 @@ const pendingCallout = state.callouts?.find(
     {[
       ["dashboard", "Dashboard", <Home size={18} />],
       ["leaderboard", "Leaderboard", <Trophy size={18} />],
+      ["competition", "A-Team / Challengers", <ShieldCheck size={18} />],
       ["players", "Players", <Users size={18} />],
       ["callouts", "Call-outs", <Swords size={18} />],
-      ["reflex", "Reflex Range", <Target size={18} />],
       ["tournament", "Tournament", <Crown size={18} />],
       ["bracket", "Bracket", <Flame size={18} />],
       ["hall", "Hall of Fame", <Star size={18} />],
@@ -3288,431 +3298,327 @@ const pendingCallout = state.callouts?.find(
             </div>
           </>
         )}
-  {tab === "reflex" && (      
-<button
-  type="button"
-  onClick={() => {
-    setReflexGame({
-      running: false,
-      finished: false,
-      fullscreen: true,
-      hitmarker: false,
-      countdown: 10,
-      timeLeft: 60,
-      score: 0,
-      hits: 0,
-      misses: 0,
-      target: null,
-      startedAt: null,
-      reactionTimes: [],
-    });
-    setTimeout(() => {
-  document.getElementById("reflex-countdown-arena")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
-}, 100);
-  }}
-  style={buttonStyle(true, false)}
->
-  Start Fullscreen Warm-up
-</button>
-)}
-{reflexGame.countdown !== null && (
+        {tab === "competition" && (
+          <div style={{ display: "grid", gap: 16 }}>
+            <div style={cardStyle()}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div>
+                  <h2 style={{ marginTop: 0, marginBottom: 6 }}>👑 Shadowborn ZA A-Team</h2>
+                  <div style={{ color: "#d6caef" }}>
+                    Fixed competitive roster. These 4 players represent the clan in serious scrims, clan wars and tournaments.
+                  </div>
+                </div>
+                <span style={badgeStyle("rgba(250,204,21,0.16)", "#fde68a")}>
+                  {aTeamPlayers.length}/4 Pro Team Spots
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14, marginTop: 16 }}>
+                {aTeamPlayers.length === 0 ? (
+                  <div style={{ color: "#c4b5fd" }}>No A-Team selected yet. Admins can promote players below.</div>
+                ) : (
+                  aTeamPlayers.map((player, index) => (
+                    <div
+                      key={player.id}
+                      style={{
+                        padding: 16,
+                        borderRadius: 18,
+                        background: "linear-gradient(135deg, rgba(250,204,21,0.14), rgba(124,58,237,0.18))",
+                        border: "1px solid rgba(250,204,21,0.36)",
+                        boxShadow: "0 0 26px rgba(250,204,21,0.14)",
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <img
+                          src={player.avatar || DEFAULT_LOGO}
+                          alt={player.name}
+                          style={{ width: 58, height: 58, borderRadius: 16, objectFit: "cover", border: "1px solid rgba(250,204,21,0.55)" }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 900, fontSize: 18 }}>#{index + 1} {player.name}</div>
+                          <div style={{ color: "#fde68a", fontWeight: 800 }}>A-Team Pro</div>
+                          {player.playStyle && (
   <div
-  id="reflex-countdown-area"
     style={{
-      marginTop: 20,
-      fontSize: 180,
+      marginTop: 4,
+      fontSize: 20,
       fontWeight: 900,
-      letterSpacing: 4,
-      textAlign: "center",
-      color: "#facc15",
-      textShadow: "0 0 30px rgba(250,204,21,0.8)",
+      textShadow: "0 0 12px currentColor",
+      color:
+        player.playStyle === "AR"
+          ? "#facc15"
+          : player.playStyle === "SMG"
+          ? "#ef4444"
+          : "#a855f7",
     }}
   >
-    {reflexGame.countdown}
+    {player.playStyle === "AR" && "🎯 AR"}
+    {player.playStyle === "SMG" && "⚡ SMG"}
+    {player.playStyle === "FLEX" && "🔀 FLEX"}
   </div>
 )}
-{tab === "reflex" && (
+                        </div>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+                        <div style={badgeStyle()}>CR {getCompetitiveScore(player)}</div>
+                        <div style={badgeStyle()}>W {player.wins} / L {player.losses}</div>
+                        <div style={badgeStyle("rgba(34,197,94,0.13)", "#86efac")}>Training {player.trainingAttended || 0}</div>
+                        <div style={badgeStyle("rgba(239,68,68,0.13)", "#fca5a5")}>Missed {player.trainingMissed || 0}</div>
+                      </div>
+                      {canAdmin && (
   <>
-<div
+    <button
+      type="button"
+      onClick={() => setTeamRole(player.id, "challenger")}
+      style={{ ...buttonStyle(false, false), marginTop: 12, width: "100%" }}
+    >
+      Move to Challengers
+    </button>
+    <button
+  type="button"
+  onClick={() => setTeamRole(player.id, "promotion")}
   style={{
-    display: "flex",
-    gap: 20,
-    marginTop: 15,
-    marginBottom: 15,
-    fontWeight: 700,
+    ...buttonStyle(false, false),
+    marginTop: 12,
+    width: "100%",
   }}
 >
-  <div>⏱️ Time: {reflexGame.timeLeft}s</div>
-  <div>🎯 Score: {reflexGame.score}</div>
-  <div>✅ Hits: {reflexGame.hits}</div>
-  <div>❌ Misses: {reflexGame.misses}</div>
-</div>
-<div>
-  🎯 Accuracy:{" "}
-  {reflexGame.hits + reflexGame.misses > 0
-    ? Math.round((reflexGame.hits / (reflexGame.hits + reflexGame.misses)) * 100)
-    : 0}
-  %
-</div>
-<div>
-  ⚡ Avg Reaction:{" "}
-  {reflexGame.reactionTimes.length > 0
-    ? Math.round(
-        reflexGame.reactionTimes.reduce((a, b) => a + b, 0) /
-          reflexGame.reactionTimes.length
-      )
-    : 0}
-  ms
-</div>
+  Move to Promotion Squad
+</button>
+
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <button
+        type="button"
+        onClick={() => markTraining(player.id, "attended")}
+        style={buttonStyle(false, false)}
+      >
+        ✅ Attended
+      </button>
+
+      <button
+        type="button"
+        onClick={() => markTraining(player.id, "missed")}
+        style={buttonStyle(false, false)}
+      >
+        ❌ Missed
+      </button>
+
+      <button
+        type="button"
+        onClick={() => resetTraining(player.id)}
+        style={buttonStyle(false, false)}
+      >
+        🔄 Reset
+      </button>
+      <button
+  type="button"
+  onClick={() => resetPlayerCR(player.id)}
+  style={buttonStyle(false, false)}
+>
+  Reset CR
+</button>
+    </div>
   </>
 )}
-{reflexGame.running && reflexGame.target && (
-  <div
-  id="reflex-game-arena"
-  onClick={(e) => {
-  if (e.target.id !== "reflex-game-arena") return;
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>🔥 Promotion Squad</h2>
+              <div style={{ color: "#d6caef", marginBottom: 14 }}>
+                The next 4 players in line for A-Team promotion. Strong performance, activity and training attendance can earn an A-Team opportunity.
+              </div>
 
-  alert("MISS CLICK WORKS");
-
-  playReflexSound("miss");
-setWeaponFx({
-  firing: true,
-  lastShot: Date.now(),
-});
-
-setTimeout(() => {
-  setWeaponFx((prev) => ({
-    ...prev,
-    firing: false,
-  }));
-}, 90);
-  setReflexGame((prev) => ({
-    ...prev,
-    misses: prev.misses + 1,
-  }));
-}}
-  style={{
-    position: "relative",
-    width: "100%",
-    height: "78vh",
-    marginTop: 20,
-    borderRadius: 20,
-    background: "#0a0612",
-    border: "2px solid #7c3aed",
-    overflow: "hidden",
-    cursor: "crosshair",
-  }}
->
-    <div
-    onClick={(e) => {
-  e.stopPropagation();
-  
-    const reactionTime =
-      Date.now() - reflexGame.target.createdAt;
-
-    setReflexGame((prev) => ({
-      ...prev,
-      score: prev.score + 1,
-      hits: prev.hits + 1,
-      reactionTimes: [
-        ...prev.reactionTimes,
-        reactionTime,
-      ],
-      target: {
-        x: Math.random() * 85 + 5,
-        y: Math.random() * 85 + 5,
-        createdAt: Date.now(),
-      },
-    }));
-  }}
-  onMouseEnter={() =>
-  setReflexGame((prev) => ({ ...prev, targetHover: true }))
-}
-onMouseLeave={() =>
-  setReflexGame((prev) => ({ ...prev, targetHover: false }))
-}
-  style={{
-    position: "absolute",
-    left: `${reflexGame.target.x}%`,
-    top: `${reflexGame.target.y}%`,
-    width:
-  reflexDifficulty === "Easy"
-    ? 80
-    : reflexDifficulty === "Hard"
-    ? 40
-    : reflexDifficulty === "Insane"
-    ? 25
-    : 60,
-height:
-  reflexDifficulty === "Easy"
-    ? 80
-    : reflexDifficulty === "Hard"
-    ? 40
-    : reflexDifficulty === "Insane"
-    ? 25
-    : 60,
-    borderRadius: "50%",
-    background: "#ef4444",
-    transform: "translate(-50%, -50%)",
-    boxShadow: "0 0 25px rgba(239,68,68,0.8)",
-    cursor: "crosshair",
-  }}
->
-  {reflexGame.hitmarker && (
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        transform: "translate(-50%, -50%)",
-        fontSize: 42,
-        fontWeight: 900,
-        color: "white",
-        textShadow: "0 0 15px rgba(255,255,255,0.9)",
-        pointerEvents: "none",
-      }}
-    >
-      ✕
-    </div>
-  )}
-</div>
-  </div>
-)}
-{tab === "reflex" && reflexGame.finished && (
+              {promotionZonePlayers.length === 0 ? (
+                <div style={{ color: "#c4b5fd" }}>No challengers yet.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {promotionZonePlayers.map((player, index) => (
+                    <div
+                      key={player.id}
+                      style={{
+                        padding: 14,
+                        borderRadius: 16,
+                        background:
+                          index === 0
+                            ? "linear-gradient(135deg, rgba(239,68,68,0.20), rgba(250,204,21,0.12))"
+                            : "rgba(255,255,255,0.05)",
+                        border: index === 0 ? "1px solid rgba(239,68,68,0.45)" : "1px solid rgba(255,255,255,0.08)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 900, fontSize: 18 }}>
+                          {index === 0 ? "⚔️ #1 Challenger" : `#${index + 1} Challenger`} • {player.name}
+                        </div>
+                        {player.playStyle && (
   <div
     style={{
-      marginTop: 20,
-      padding: 20,
-      borderRadius: 20,
-      background: "rgba(124,58,237,0.15)",
-      border: "1px solid rgba(124,58,237,0.4)",
+      marginTop: 4,
+      fontSize: 16,
+      fontWeight: 900,
+      color:
+        player.playStyle === "AR"
+          ? "#facc15"
+          : player.playStyle === "SMG"
+          ? "#ef4444"
+          : "#a855f7",
     }}
   >
-    <h2>🏆 Session Complete</h2>
-
-    <div>🎯 Score: {reflexGame.score}</div>
-    <div>✅ Hits: {reflexGame.hits}</div>
-    <div>❌ Misses: {reflexGame.misses}</div>
-
-    <div>
-      🎯 Accuracy:{" "}
-      {reflexGame.hits + reflexGame.misses > 0
-        ? Math.round(
-            (reflexGame.hits /
-              (reflexGame.hits + reflexGame.misses)) *
-              100
-          )
-        : 0}
-      %
-    </div>
-
-    <div>
-      ⚡ Avg Reaction:{" "}
-      {reflexGame.reactionTimes.length > 0
-        ? Math.round(
-            reflexGame.reactionTimes.reduce((a, b) => a + b, 0) /
-              reflexGame.reactionTimes.length
-          )
-        : 0}
-      ms
-    </div>
+    {player.playStyle === "AR" && "🎯 AR"}
+    {player.playStyle === "SMG" && "⚡ SMG"}
+    {player.playStyle === "FLEX" && "🔀 FLEX"}
   </div>
 )}
-{tab === "reflex" && (
-  <div style={cardStyle()}>
-    <h2>🏆 Reflex Leaderboards</h2>
-{(() => {
-  const reflexChampion = (state.reflexScores || [])
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        b.accuracy - a.accuracy ||
-        a.avgReaction - b.avgReaction
-    )[0];
+                        <div style={{ color: "#d6caef", marginTop: 4 }}>
+                          CR {getCompetitiveScore(player)} • W {player.wins} / L {player.losses} • MVP {player.mvpPoints || 0}
+                        </div>
+                        {lowestATeamPlayer && (
+                          <div style={{ color: "#fca5a5", marginTop: 4, fontWeight: 800 }}>
+                            Target spot: {lowestATeamPlayer.name}
+                          </div>
+                        )}
+                      </div>
 
-  if (!reflexChampion) return null;
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {canAdmin && (
+  <>
+    <button
+      type="button"
+      onClick={() => setTeamRole(player.id, "a-team")}
+      style={buttonStyle(true, false)}
+    >
+      Promote to A-Team
+    </button>
 
-  return (
-    <div
+    <button
+      type="button"
+      onClick={() => setTeamRole(player.id, "challenger")}
       style={{
-        padding: 18,
-        marginTop: 12,
-        marginBottom: 20,
-        borderRadius: 16,
-        background:
-          "linear-gradient(90deg, rgba(250,204,21,0.18), rgba(124,58,237,0.18))",
-        border: "1px solid rgba(250,204,21,0.35)",
-        boxShadow: "0 0 25px rgba(250,204,21,0.15)",
+        ...buttonStyle(false, false),
+        marginTop: 8,
+        width: "100%",
       }}
     >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#facc15",
-          marginBottom: 8,
-        }}
-      >
-        CURRENT REFLEX CHAMPION
-      </div>
+      Move to Challengers
+    </button>
+  </>
+)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-      <div
-        style={{
-          fontSize: 28,
-          fontWeight: 800,
-        }}
-      >
-        {reflexChampion.playerName}
-      </div>
+            <div style={cardStyle()}>
+              <h2 style={{ marginTop: 0 }}>⚔️ Challenger Rankings</h2>
+              <div style={{ color: "#d6caef", marginBottom: 14 }}>
+                This is the grind ladder for everyone outside the A-Team. Activity alone should not be enough — wins, MVPs, tournaments and training must matter.
+              </div>
 
-      <div
-        style={{
-          marginTop: 6,
-          opacity: 0.85,
-        }}
-      >
-        <span
-  style={{
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontWeight: 800,
-    background:
-      reflexChampion.difficulty === "Easy"
-        ? "rgba(34,197,94,0.22)"
-        : reflexChampion.difficulty === "Normal"
-        ? "rgba(59,130,246,0.22)"
-        : reflexChampion.difficulty === "Hard"
-        ? "rgba(249,115,22,0.22)"
-        : "rgba(239,68,68,0.22)",
-    color:
-      reflexChampion.difficulty === "Easy"
-        ? "#86efac"
-        : reflexChampion.difficulty === "Normal"
-        ? "#93c5fd"
-        : reflexChampion.difficulty === "Hard"
-        ? "#fdba74"
-        : "#fca5a5",
-  }}
->
-  {reflexChampion.difficulty}
-</span>{" "}
-• 🎯 {reflexChampion.score} pts • ⚡{" "}
-        {reflexChampion.avgReaction}ms
-      </div>
-    </div>
-  );
-})()}
-{canAdmin && (
-  <button
-    type="button"
-    onClick={() => {
-      if (!window.confirm("Clear all Reflex scores?")) return;
-
-      updateState((prev) => ({
-        ...prev,
-        reflexScores: [],
-      }));
-    }}
+              <div style={{ display: "grid", gap: 10 }}>
+                {challengerPlayers.map((player, index) => (
+                  <div
+                    key={player.id}
+                    style={{
+                      padding: 12,
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.045)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "70px 1fr 260px",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, color: index < 3 ? "#fde68a" : "#c4b5fd" }}>#{index + 1}</div>
+                    <div>
+                      <div style={{ fontWeight: 900 }}>{player.name}</div>
+                      {player.playStyle && (
+  <div
     style={{
-      ...buttonStyle(false, false),
-      marginBottom: 14,
-      background: "rgba(239,68,68,0.25)",
+      color: "#facc15",
+      fontSize: 18,
+      fontWeight: 700,
+      marginTop: 2,
     }}
   >
-    🗑 Clear Reflex Scores
-  </button>
+    {player.playStyle === "AR" && "🎯 AR"}
+    {player.playStyle === "SMG" && "⚡ SMG"}
+    {player.playStyle === "FLEX" && "🔀 FLEX"}
+  </div>
 )}
+                      <div style={{ color: "#d6caef", fontSize: 13 }}>
+                        CR {getCompetitiveScore(player)} • Points {player.points} • W {player.wins} / L {player.losses} • Tournaments {player.tournamentWins}
+                      </div>
+                    </div>
+                    {canAdmin && (
+                      <div style={{ display: "flex", gap: 6, justifyContent: isMobile ? "flex-start" : "flex-end", flexWrap: "wrap" }}>
+                        <button type="button" onClick={() => updateTraining(player.id, "attended", 1)} style={buttonStyle(false, false)}>+ Training</button>
+                        <button type="button" onClick={() => updateTraining(player.id, "missed", 1)} style={buttonStyle(false, false)}>+ Missed</button>
+                        <button type="button" onClick={() => setTeamRole(player.id, "a-team")} style={buttonStyle(true, false)}>A-Team</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
 
-{["Easy", "Normal", "Hard", "Insane"].map((difficulty) => {
-  const scores = (state.reflexScores || [])
-    .filter((s) => s.difficulty === difficulty)
-    .sort(
-  (a, b) =>
-    b.score - a.score ||
-    b.accuracy - a.accuracy ||
-    a.avgReaction - b.avgReaction
-)
-.slice(0, 10);
+            {canAdmin && (
+              <div style={cardStyle()}>
+                <h2 style={{ marginTop: 0 }}>🛠 Admin Competitive Rating</h2>
+                <div style={{ color: "#d6caef", marginBottom: 14 }}>
+                  Optional manual CR override. Leave it on 0 to let the site calculate CR from points, wins, MVP, tournaments and training.
+                </div>
 
-  return (
-    <div
-      key={difficulty}
-      style={{
-        marginTop: 18,
-        padding: 14,
-        borderRadius: 14,
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(124,58,237,0.25)",
-      }}
-    >
-      <h3>🏆 {difficulty} Leaderboard</h3>
-
-      {scores.length === 0 ? (
-        <div style={{ color: "#c4b5fd" }}>No scores yet</div>
-      ) : (
-        scores.map((score, index) => (
-          <div
-            key={score.id}
-            style={{
-              padding: 12,
-              marginBottom: 8,
-              borderRadius: 10,
-              background:
-  index === 0
-    ? "rgba(250,204,21,0.16)"
-    : index === 1
-    ? "rgba(226,232,240,0.14)"
-    : index === 2
-    ? "rgba(180,83,9,0.16)"
-    : "rgba(255,255,255,0.06)",
-    border:
-  index === 0
-    ? "1px solid rgba(250,204,21,0.55)"
-    : index === 1
-    ? "1px solid rgba(226,232,240,0.45)"
-    : index === 2
-    ? "1px solid rgba(180,83,9,0.45)"
-    : "1px solid rgba(255,255,255,0.08)",
-boxShadow:
-  index === 0
-    ? "0 0 20px rgba(250,204,21,0.18)"
-    : index === 1
-    ? "0 0 16px rgba(226,232,240,0.14)"
-    : index === 2
-    ? "0 0 16px rgba(180,83,9,0.14)"
-    : "none",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <strong>
-              {index === 0
-                ? "🥇"
-                : index === 1
-                ? "🥈"
-                : index === 2
-                ? "🥉"
-                : `#${index + 1}`}{" "}
-              {score.playerName}
-            </strong>
-
-            <span>
-              🎯 {score.score} pts • ✅ {score.accuracy}% • ⚡{" "}
-{score.avgReaction}ms • 📅 {score.createdAt}
-            </span>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {competitivePlayers.map((player) => (
+                    <div
+                      key={player.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile ? "1fr" : "1fr 140px 160px 160px",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: 12,
+                        borderRadius: 14,
+                        background: "rgba(0,0,0,0.16)",
+                      }}
+                    >
+                      <strong>{player.name}</strong>
+                      <input
+                        type="number"
+                        value={player.competitiveRating || 0}
+                        onChange={(e) => updatePlayer(player.id, "competitiveRating", e.target.value)}
+                        style={inputStyle(false)}
+                      />
+                      <select
+                        value={player.teamRole || "challenger"}
+                        onChange={(e) => setTeamRole(player.id, e.target.value)}
+                        style={inputStyle(false)}
+                      >
+                        <option value="challenger">Challenger</option>
+                        <option value="a-team">A-Team</option>
+                      </select>
+                      <span style={badgeStyle(player.teamRole === "a-team" ? "rgba(250,204,21,0.16)" : "rgba(124,58,237,0.16)", player.teamRole === "a-team" ? "#fde68a" : "#d8b4fe")}>
+                        {player.teamRole === "a-team" ? "Pro Team" : "Challenger"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        ))
-      )}
-    </div>
-  );
-})}
-  </div>
-)}
+        )}
+
         {tab === "leaderboard" && (
   <div style={{ display: "grid", gap: 12 }}>
     
@@ -3811,449 +3717,6 @@ boxShadow:
 )}
           </div>
         )}
-{reflexGame.fullscreen && (
-  <div
-    style={{
-      position: "fixed",
-      inset: 0,
-      zIndex: 9999,
-      background: "radial-gradient(circle at center, rgba(124,58,237,0.25), #05020a 65%)",
-      color: "white",
-      padding: 24,
-      boxSizing: "border-box",
-      overflow: "hidden",
-    }}
-  >
-    <button
-      type="button"
-      onClick={() =>
-        setReflexGame((prev) => ({
-          ...prev,
-          fullscreen: false,
-          running: false,
-          countdown: null,
-          target: null,
-        }))
-      }
-      style={{
-        ...buttonStyle(false, false),
-        position: "absolute",
-        top: 20,
-        right: 20,
-        zIndex: 10001,
-      }}
-    >
-      Exit
-    </button>
-
-    <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 12 }}>
-      🎯 Shadowborn Reflex Range
-      <div
-  style={{
-    display: "flex",
-    gap: 10,
-    marginTop: 10,
-    marginBottom: 10,
-  }}
->
-  {["Easy", "Normal", "Hard", "Insane"].map((difficulty) => (
-    <button
-      key={difficulty}
-      onClick={() => setReflexDifficulty(difficulty)}
-      style={{
-        padding: "8px 14px",
-        borderRadius: 8,
-        border:
-          reflexDifficulty === difficulty
-            ? "2px solid #facc15"
-            : "1px solid #7c3aed",
-        background:
-          reflexDifficulty === difficulty
-            ? "#facc15"
-            : "rgba(124,58,237,0.2)",
-        color:
-          reflexDifficulty === difficulty
-            ? "#000"
-            : "#fff",
-        cursor: "pointer",
-        fontWeight: 700,
-      }}
-    >
-      {difficulty}
-    </button>
-  ))}
-</div>
-    </div>
-
-    <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontWeight: 800 }}>
-      <div>⏱️ Time: {reflexGame.timeLeft}s</div>
-      <div>🎯 Score: {reflexGame.score}</div>
-      <div>✅ Hits: {reflexGame.hits}</div>
-      <div>❌ Misses: {reflexGame.misses}</div>
-      <div>🎮 Difficulty: {reflexDifficulty}</div>
-    </div>
-
-    {reflexGame.countdown !== null && (
-      <div
-        style={{
-          height: "75vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 180,
-          fontWeight: 900,
-          color: "#facc15",
-          textShadow: "0 0 40px rgba(250,204,21,0.95)",
-        }}
-      >
-        {reflexGame.countdown}
-      </div>
-    )}
-{reflexGame.fullscreen && reflexGame.running && (
-  <div
-    style={{
-      position: "fixed",
-      left: crosshair.x,
-      top: crosshair.y,
-      width: 34,
-      height: 34,
-      transform: weaponFx.firing
-  ? "translate(-50%, -60%) scale(1.12)"
-  : "translate(-50%, -50%) scale(1)",
-      pointerEvents: "none",
-      zIndex: 10002,
-    }}
-  >
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: 0,
-        width: 2,
-        height: 11,
-        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
-        transform: "translateX(-50%)",
-        boxShadow: reflexGame.targetHover
-  ? "0 0 12px rgba(239,68,68,1)"
-  : "0 0 8px rgba(255,255,255,0.9)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        bottom: 0,
-        width: 2,
-        height: 11,
-        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
-        transform: "translateX(-50%)",
-        boxShadow: reflexGame.targetHover
-  ? "0 0 12px rgba(239,68,68,1)"
-  : "0 0 8px rgba(255,255,255,0.9)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: 0,
-        top: "50%",
-        width: 11,
-        height: 2,
-        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
-        transform: "translateY(-50%)",
-        boxShadow: reflexGame.targetHover
-  ? "0 0 12px rgba(239,68,68,1)"
-  : "0 0 8px rgba(255,255,255,0.9)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        right: 0,
-        top: "50%",
-        width: 11,
-        height: 2,
-        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
-        transform: "translateY(-50%)",
-        boxShadow: reflexGame.targetHover
-  ? "0 0 12px rgba(239,68,68,1)"
-  : "0 0 8px rgba(255,255,255,0.9)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        width: 4,
-        height: 4,
-        borderRadius: "50%",
-        background: reflexGame.targetHover ? "#ef4444" : "#ffffff",
-        transform: "translate(-50%, -50%)",
-        boxShadow: "0 0 10px rgba(255,255,255,1)",
-      }}
-    />
-    {weaponFx.hitmarker && (
-  <div
-    style={{
-      position: "absolute",
-      left: "50%",
-      top: "50%",
-      width: 42,
-      height: 42,
-      transform: "translate(-50%, -50%)",
-      pointerEvents: "none",
-    }}
-  >
-    <div
-      style={{
-        position: "absolute",
-        left: 6,
-        top: 6,
-        width: 14,
-        height: 3,
-        background: "#ffffff",
-        transform: "rotate(45deg)",
-        boxShadow: "0 0 10px rgba(255,255,255,1)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        right: 6,
-        top: 6,
-        width: 14,
-        height: 3,
-        background: "#ffffff",
-        transform: "rotate(-45deg)",
-        boxShadow: "0 0 10px rgba(255,255,255,1)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        left: 6,
-        bottom: 6,
-        width: 14,
-        height: 3,
-        background: "#ffffff",
-        transform: "rotate(-45deg)",
-        boxShadow: "0 0 10px rgba(255,255,255,1)",
-      }}
-    />
-    <div
-      style={{
-        position: "absolute",
-        right: 6,
-        bottom: 6,
-        width: 14,
-        height: 3,
-        background: "#ffffff",
-        transform: "rotate(45deg)",
-        boxShadow: "0 0 10px rgba(255,255,255,1)",
-      }}
-    />
-  </div>
-)}
-{weaponFx.hitmarker && (
-  <div
-    style={{
-      position: "fixed",
-      left: crosshair.x,
-      top: crosshair.y,
-      transform: "translate(-50%, -50%)",
-      color: "#ffffff",
-      fontSize: 32,
-      fontWeight: "bold",
-      pointerEvents: "none",
-      zIndex: 10003,
-      textShadow: "0 0 10px white",
-    }}
-  >
-    ✕
-  </div>
-)}
-  </div>
-)}
-{weaponFx.scorePop && (
-  <div
-    style={{
-      position: "fixed",
-      left: crosshair.x + 22,
-      top: crosshair.y - 35,
-      transform: "translate(-50%, -50%)",
-      color: "#22c55e",
-      fontSize: 28,
-      fontWeight: 900,
-      pointerEvents: "none",
-      zIndex: 10004,
-      textShadow: "0 0 12px rgba(34,197,94,1)",
-    }}
-  >
-    {reflexGame.target?.golden ? "+3" : "+1"}
-  </div>
-)}
-{weaponFx.bonusHit && (
-  <div
-    style={{
-      position: "fixed",
-      left: "50%",
-      top: "25%",
-      transform: "translate(-50%, -50%)",
-      color: "#facc15",
-      fontSize: 42,
-      fontWeight: 900,
-      textShadow: "0 0 20px #facc15",
-      pointerEvents: "none",
-      zIndex: 10006,
-    }}
-  >
-    ⭐ BONUS TARGET! +3
-  </div>
-)}
-{reflexGame.fullscreen && reflexGame.running && (
-  <img
-    src="/weapons/fps-rifle.png"
-    alt="First person rifle"
-    style={{
-      position: "fixed",
-      right: weaponFx.firing ? "-35px" : "-15px",
-      bottom: weaponFx.firing ? "-35px" : "-20px",
-      width: weaponFx.firing ? 620 : 600,
-      maxWidth: "55vw",
-      transform: weaponFx.firing
-        ? "rotate(-1deg) scale(1.03)"
-        : "rotate(0deg) scale(1)",
-      transformOrigin: "bottom right",
-      pointerEvents: "none",
-      zIndex: 10002,
-      userSelect: "none",
-      filter: "drop-shadow(0 0 25px rgba(0,0,0,0.9))",
-    }}
-  />
-)}
-{reflexGame.fullscreen && reflexGame.running && weaponFx.firing && (
-  <img
-    src="/weapons/muzzle-flash.png"
-    alt="Muzzle Flash"
-    style={{
-      position: "fixed",
-      right: "14.5%",
-      bottom: "24.8%",
-      width: 95,
-      pointerEvents: "none",
-      zIndex: 10005,
-      transform: "rotate(-8deg)",
-      filter: "drop-shadow(0 0 15px rgba(250,204,21,1))",
-      userSelect: "none",
-    }}
-  />
-)}
-    {reflexGame.running && reflexGame.target && (
-      <div
-        id="reflex-game-arena"
-        onClick={() => {
-  playReflexSound("miss");
-
-  setReflexGame((prev) => ({
-    ...prev,
-    misses: prev.misses + 1,
-  }));
-}}
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "calc(100vh - 120px)",
-          marginTop: 18,
-          borderRadius: 18,
-          background: "#0a0612",
-          border: "2px solid #7c3aed",
-          overflow: "hidden",
-          cursor: "none",
-        }}
-      >
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-
-            const reactionTime = Date.now() - reflexGame.target.createdAt;
-            playReflexSound("hit");
-             hitmarker: true,
-            setWeaponFx({
-  firing: true,
-  hitmarker: true,
-  scorePop: true,
-  bonusHit: reflexGame.target.golden,
-  lastShot: Date.now(),
-});
-
-setTimeout(() => {
-  setWeaponFx((prev) => ({
-    ...prev,
-    firing: false,
-     hitmarker: false,
-     scorePop: false,
-     bonusHit: false,
-  }));
-}, 140);
-
-            setReflexGame((prev) => ({
-  ...prev,
-  score: prev.score + (reflexGame.target.golden ? 3 : 1),
-  hitmarker: true,
-  hits: prev.hits + 1,
-  reactionTimes: [...prev.reactionTimes, reactionTime],
-}));
-
-setTimeout(() => {
-  setReflexGame((prev) => ({
-    ...prev,
-    hitmarker: false,
-    target: {
-      x: Math.random() * 85 + 5,
-      y: Math.random() * 55 + 8,
-      createdAt: Date.now(),
-      golden: Math.random() < 0.1,
-    },
-  }));
-}, 150);
-          }}
-          style={{
-            position: "absolute",
-            left: `${reflexGame.target.x}%`,
-            top: `${reflexGame.target.y}%`,
-            width:
-  reflexDifficulty === "Easy"
-    ? 80
-    : reflexDifficulty === "Hard"
-    ? 40
-    : reflexDifficulty === "Insane"
-    ? 25
-    : 60,
-height:
-  reflexDifficulty === "Easy"
-    ? 80
-    : reflexDifficulty === "Hard"
-    ? 40
-    : reflexDifficulty === "Insane"
-    ? 25
-    : 60,
-      
-            borderRadius: "50%",
-            background: reflexGame.target.golden
-  ? "radial-gradient(circle, #fde047 0%, #facc15 45%, #ca8a04 100%)"
-  : "#ef4444",
-            transform: "translate(-50%, -50%)",
-            boxShadow: reflexGame.target.golden
-  ? "0 0 25px #facc15, 0 0 50px #facc15"
-  : "0 0 25px rgba(239,68,68,0.8)",
-            cursor: "crosshair",
-          }}
-        />
-      </div>
-    )}
-  </div>
-)}
         {tab === "players" && (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.25fr 0.75fr", gap: 16 }}>
             <div style={{ display: "grid", gap: 12 }}>
