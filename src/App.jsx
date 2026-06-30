@@ -151,6 +151,7 @@ const defaultState = {
   recommendations: [],
   rankRequests: [],
   sundayHistory: [],
+  activeSundayTeams: [],
   seasonHistory: [],
 };
 
@@ -425,7 +426,16 @@ export default function App() {
 substituteTeamType: "winning",
     flawless: false,
   });
-
+const [sundayTeams, setSundayTeams] = useState([]);
+const [sundayTeamCount, setSundayTeamCount] = useState(3);
+const [sundaySelectedPlayers, setSundaySelectedPlayers] = useState([]);
+const [sundayRoundDraft, setSundayRoundDraft] = useState({
+  roundName: "Round 1",
+  teamAIndex: "",
+  teamBIndex: "",
+  winnerIndex: "",
+});
+const [sundayRounds, setSundayRounds] = useState([]);
   const [recommendationDraft, setRecommendationDraft] = useState({
     title: "",
     description: "",
@@ -549,6 +559,22 @@ const filteredCompletedCallouts =
       });
   const loggedInPlayer = auth ? players.find((p) => p.id === auth.playerId) : null;
   const canAdmin = loggedInPlayer && (loggedInPlayer.role === "leader" || loggedInPlayer.role === "co-leader");
+  const sundayPlayingIds = [
+  ...(sundayEntry.winningTeamIds || []),
+  ...(sundayEntry.losingTeamIds || []),
+].map(Number);
+
+const sundayPlayingPlayers = players.filter((p) =>
+  sundayPlayingIds.includes(Number(p.id))
+);
+
+const sundayWinningPlayers = players.filter((p) =>
+  (sundayEntry.winningTeamIds || []).map(Number).includes(Number(p.id))
+);
+
+const sundayLosingPlayers = players.filter((p) =>
+  (sundayEntry.losingTeamIds || []).map(Number).includes(Number(p.id))
+);
 
   function getRawCompetitiveScore(player) {
   return (
@@ -606,7 +632,11 @@ useEffect(() => {
       .single();
 
     if (!error && data?.data) {
-      setState((prev) => {
+  if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA" || document.activeElement?.tagName === "SELECT") {
+    return;
+  }
+
+  setState((prev) => {
         return {
           ...prev,
           ...data.data,
@@ -661,14 +691,19 @@ useEffect(() => {
         rankRequests: data.data.rankRequests || [],
         seasonHistory: data.data.seasonHistory || [],
         poll: data.data.poll?.options?.length === 9 ? data.data.poll : defaultState.poll,
+        sundayTeams: data.data.sundayTeams || [],
+        sundayRounds: data.data.sundayRounds || [],
       });
+      setSundayTeams(data.data.sundayTeams || []);
+      setSundayRounds(data.data.sundayRounds || []);
     } else {
       await supabase
         .from("shadowborn_state")
         .upsert({ id: STORAGE_ROW_ID, data: defaultState, updated_at: new Date().toISOString() });
       setState(defaultState);
+      setSundayTeams([]);
+      setSundayRounds([]);
     }
-
     setLoading(false);
   }
 
@@ -1702,6 +1737,147 @@ function confirmCallout(calloutId) {
     };
   });
 }
+function toggleSundayPlayer(playerId) {
+  setSundaySelectedPlayers((prev) =>
+    prev.includes(playerId)
+      ? prev.filter((id) => id !== playerId)
+      : [...prev, playerId]
+  );
+}
+
+function generateSundayTeams() {
+  if (!canAdmin) return;
+
+  const selectedPlayers = players
+    .filter((p) => sundaySelectedPlayers.includes(p.id))
+    .sort((a, b) => getCompetitiveScore(b) - getCompetitiveScore(a));
+
+  if (selectedPlayers.length < 2) {
+    alert("Select at least 2 players.");
+    return;
+  }
+
+  const teamCount = Number(sundayTeamCount) || 2;
+
+  if (selectedPlayers.length < teamCount) {
+    alert("Not enough players for selected team count.");
+    return;
+  }
+
+  const maxTeamSize = Math.ceil(selectedPlayers.length / teamCount);
+
+  const teams = Array.from({ length: teamCount }, (_, index) => ({
+    name: `Team ${index + 1}`,
+    players: [],
+    totalCR: 0,
+  }));
+
+  selectedPlayers.forEach((player) => {
+    const availableTeams = teams.filter((team) => team.players.length < maxTeamSize);
+
+    availableTeams.sort((a, b) => {
+      if (a.players.length !== b.players.length) {
+        return a.players.length - b.players.length;
+      }
+      return a.totalCR - b.totalCR;
+    });
+
+    const targetTeam = availableTeams[0];
+
+    targetTeam.players.push(player);
+    targetTeam.totalCR += getCompetitiveScore(player);
+  });
+
+  setSundayTeams(teams);
+}
+function applyGeneratedSundayTeam(teamType, teamIndex) {
+  const team = sundayTeams[teamIndex];
+  if (!team) return;
+
+  const playerIds = team.players.map((p) => p.id);
+
+  setSundayEntry((prev) => ({
+    ...prev,
+    [teamType === "winning" ? "winningTeamIds" : "losingTeamIds"]: playerIds,
+  }));
+}
+function createSundayRound() {
+  if (!canAdmin) return;
+
+  if (!sundayTeams.length) {
+    alert("Lock or generate Sunday teams first.");
+    return;
+  }
+
+  if (
+    sundayRoundDraft.teamAIndex === "" ||
+    sundayRoundDraft.teamBIndex === ""
+  ) {
+    alert("Select Team A and Team B.");
+    return;
+  }
+
+  if (sundayRoundDraft.teamAIndex === sundayRoundDraft.teamBIndex) {
+    alert("Team A and Team B cannot be the same team.");
+    return;
+  }
+
+  const round = {
+    id: Date.now(),
+    roundName: sundayRoundDraft.roundName || `Round ${sundayRounds.length + 1}`,
+    teamAIndex: Number(sundayRoundDraft.teamAIndex),
+    teamBIndex: Number(sundayRoundDraft.teamBIndex),
+    winnerIndex:
+      sundayRoundDraft.winnerIndex === ""
+        ? ""
+        : Number(sundayRoundDraft.winnerIndex),
+    createdAt: new Date().toLocaleString(),
+  };
+
+  const nextRounds = [...sundayRounds, round];
+
+  setSundayRounds(nextRounds);
+
+  updateState((prev) => ({
+    ...prev,
+    sundayRounds: nextRounds,
+  }));
+
+  setSundayRoundDraft({
+    roundName: `Round ${nextRounds.length + 1}`,
+    teamAIndex: "",
+    teamBIndex: "",
+    winnerIndex: "",
+  });
+}
+function lockSundayTeams() {
+  if (!canAdmin) return;
+
+  if (!sundayTeams.length) {
+    alert("Generate teams first.");
+    return;
+  }
+
+  updateState((prev) => ({
+    ...prev,
+    sundayTeams,
+  }));
+
+  alert("Sunday teams locked for today.");
+}
+
+function clearLockedSundayTeams() {
+  if (!canAdmin) return;
+
+  if (!window.confirm("Clear locked Sunday teams?")) return;
+
+  updateState((prev) => ({
+    ...prev,
+    sundayTeams: [],
+  }));
+
+  setSundayTeams([]);
+}
     function applySundayPoints() {
   if (!canAdmin) return;
 
@@ -2507,7 +2683,418 @@ function resetAllCR() {
       </div>
     );
   }
+function getMatchesByStage(matches = []) {
+  return matches.reduce((acc, match) => {
+    const stage = match.stage || 1;
+    if (!acc[stage]) acc[stage] = [];
+    acc[stage].push(match);
+    return acc;
+  }, {});
+}
+function VisualMatchCard({ match, bracketType }) {
+  const teamA = match?.teamAId ? findTeam(match.teamAId) : null;
+  const teamB = match?.teamBId ? findTeam(match.teamBId) : null;
 
+  const isLocked = match?.locked;
+  const isFuture = match?.futureOnly || !match;
+
+  const borderColor =
+    bracketType === "final"
+      ? "rgba(250,204,21,0.75)"
+      : isLocked
+      ? "rgba(34,197,94,0.75)"
+      : isFuture
+      ? "rgba(148,163,184,0.35)"
+      : bracketType === "redemption"
+      ? "rgba(239,68,68,0.65)"
+      : "rgba(168,85,247,0.65)";
+
+  const glow =
+    bracketType === "final"
+      ? "0 0 18px rgba(250,204,21,0.18)"
+      : isLocked
+      ? "0 0 14px rgba(34,197,94,0.16)"
+      : !isFuture
+      ? "0 0 14px rgba(168,85,247,0.18)"
+      : "none";
+
+  return (
+    <div
+      style={{
+        padding: isMobile ? 9 : 10,
+        borderRadius: 14,
+        background: "rgba(0,0,0,0.28)",
+        border: `1px solid ${borderColor}`,
+        minWidth: isMobile ? 210 : 220,
+        boxShadow: glow,
+        position: "relative",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 18, fontWeight: 900 }}>
+  <span>{teamA ? getTeamName(teamA) : match?.teamALabel || "TBD"}</span>
+  <span>{match?.scoreA || "-"}</span>
+</div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 18, marginTop: 8, fontWeight: 900 }}>
+  <span>{teamB ? getTeamName(teamB) : match?.teamBLabel || "TBD"}</span>
+  <span>{match?.scoreB || "-"}</span>
+</div>
+
+      <div
+        style={{
+          marginTop: 10,
+          color: isLocked ? "#4ade80" : isFuture ? "#94a3b8" : "#c084fc",
+          fontSize: 12,
+          fontWeight: 800,
+        }}
+      >
+        {isLocked ? "✅ Completed" : isFuture ? "⏳ Future Match" : "🟣 Upcoming / Active"}
+      </div>
+    </div>
+  );
+}
+function VisualBracketBoard() {
+  const winnersByStage = getMatchesByStage([
+    ...(tournament.completedRounds || []).filter((m) => m.bracket === "W"),
+    ...(tournament.activeWinners || []),
+  ]);
+
+  const winnersRoundOneLosers = (tournament.completedRounds || [])
+  .filter((m) => m.bracket === "W" && Number(m.stage || 1) === 1 && m.loserId)
+  .map((m) => m.loserId);
+
+const visualRedemptionRoundOne = [];
+
+for (let i = 0; i < winnersRoundOneLosers.length; i += 2) {
+  visualRedemptionRoundOne.push({
+    id: `visual-redemption-r1-${i}`,
+    bracket: "L",
+    stage: 1,
+    teamAId: winnersRoundOneLosers[i],
+    teamBId: winnersRoundOneLosers[i + 1] || null,
+    scoreA: "",
+    scoreB: "",
+    locked: false,
+    visualOnly: true,
+  });
+}
+
+const realRedemptionMatches = [
+  ...(tournament.completedRounds || []).filter((m) => m.bracket === "L"),
+  ...(tournament.activeRedemption || []),
+];
+
+const realRedemptionIds = new Set(
+  realRedemptionMatches.flatMap((m) => [m.teamAId, m.teamBId]).filter(Boolean)
+);
+
+const filteredVisualRedemptionRoundOne = visualRedemptionRoundOne.filter(
+  (m) => !realRedemptionIds.has(m.teamAId) && !realRedemptionIds.has(m.teamBId)
+);
+
+const redemptionByStage = getMatchesByStage([
+  ...filteredVisualRedemptionRoundOne,
+  ...realRedemptionMatches,
+]);
+
+  const maxWinnerStage = Math.max(3, ...Object.keys(winnersByStage).map(Number), 1);
+  const maxRedemptionStage = Math.max(4, ...Object.keys(redemptionByStage).map(Number), 1);
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.16)" }}>
+        <h2 style={{ marginTop: 0 }}>🏆 Winners Bracket</h2>
+
+        <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 10 }}>
+          {Array.from({ length: maxWinnerStage }, (_, i) => i + 1).map((stage) => (
+            <div
+  key={stage}
+  style={{
+    position: "relative",
+    minWidth: isMobile ? 220 : 230,
+    paddingRight: isMobile ? 8 : 34,
+  }}
+>
+              <h3>Round {stage}</h3>
+
+              {(winnersByStage[stage] || [null]).map((match, index) => (
+                <div key={match?.id || `w-${stage}-${index}`} style={{ marginBottom: 14 }}>
+                  <VisualMatchCard match={match} bracketType="winner" />
+                </div>
+              ))}
+              {!isMobile && stage < maxWinnerStage && (
+  <div
+    style={{
+      position: "absolute",
+      right: -26,
+      top: "52%",
+      width: 34,
+      zIndex: 5,
+      height: 2,
+      background: "#a855f7",
+      opacity: 0.75,
+    }}
+  />
+)}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle(), background: "rgba(0,0,0,0.16)", border: "1px solid rgba(239,68,68,0.25)" }}>
+        <h2 style={{ marginTop: 0, color: "#f87171" }}>🔥 Redemption Bracket</h2>
+
+        <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 10 }}>
+          {Array.from({ length: maxRedemptionStage }, (_, i) => i + 1).map((stage) => (
+            <div
+  key={stage}
+  style={{
+    position: "relative",
+    minWidth: isMobile ? 220 : 230,
+    paddingRight: isMobile ? 8 : 34,
+  }}
+>
+              <h3>Round {stage}</h3>
+
+              {(redemptionByStage[stage] || [null]).map((match, index) => (
+                <div key={match?.id || `l-${stage}-${index}`} style={{ marginBottom: 14 }}>
+                  <VisualMatchCard match={match} bracketType="redemption" />
+                </div>
+              ))}
+              {!isMobile && stage < maxRedemptionStage && (
+  <div
+    style={{
+      position: "absolute",
+      right: -26,
+      top: "52%",
+      width: 34,
+      zIndex: 5,
+      height: 2,
+      background: "#ef4444",
+      opacity: 0.75,
+    }}
+  />
+)}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...cardStyle(), background: "rgba(124,58,237,0.10)" }}>
+        <h2 style={{ marginTop: 0 }}>👑 Grand Final</h2>
+        <VisualMatchCard match={tournament.grandFinal || null} bracketType="winner" />
+      </div>
+    </div>
+  );
+}
+function VisualBracketBoardV3() {
+  const completed = tournament.completedRounds || [];
+  const activeWinners = tournament.activeWinners || [];
+  const activeRedemption = tournament.activeRedemption || [];
+
+  const winnersByStage = getMatchesByStage([
+    ...completed.filter((m) => m.bracket === "W"),
+    ...activeWinners,
+  ]);
+
+  const winnersRoundOneLosers = completed
+    .filter((m) => m.bracket === "W" && Number(m.stage || 1) === 1 && m.loserId)
+    .map((m) => m.loserId);
+
+  const visualRedemptionR1 = [];
+  for (let i = 0; i < winnersRoundOneLosers.length; i += 2) {
+    visualRedemptionR1.push({
+      id: `v3-redemption-r1-${i}`,
+      bracket: "L",
+      stage: 1,
+      teamAId: winnersRoundOneLosers[i],
+      teamBId: winnersRoundOneLosers[i + 1] || null,
+      teamBLabel: winnersRoundOneLosers[i + 1] ? "" : "BYE / Waiting",
+      visualOnly: true,
+    });
+  }
+
+  const realRedemptionMatches = [
+    ...completed.filter((m) => m.bracket === "L"),
+    ...activeRedemption,
+  ];
+
+  const realRedemptionTeamIds = new Set(
+    realRedemptionMatches.flatMap((m) => [m.teamAId, m.teamBId]).filter(Boolean)
+  );
+
+  const redemptionByStage = getMatchesByStage([
+    ...visualRedemptionR1.filter(
+      (m) =>
+        !realRedemptionTeamIds.has(m.teamAId) &&
+        !realRedemptionTeamIds.has(m.teamBId)
+    ),
+    ...realRedemptionMatches,
+  ]);
+
+  const maxWinnerStage = Math.max(3, ...Object.keys(winnersByStage).map(Number), 1);
+  const maxRedemptionStage = Math.max(4, ...Object.keys(redemptionByStage).map(Number), 1);
+
+  function getStageMatches(byStage, maxStage, type) {
+    return Array.from({ length: maxStage }, (_, i) => {
+      const stage = i + 1;
+      const matches =
+        byStage[stage]?.length > 0
+          ? byStage[stage]
+          : [
+              {
+                id: `future-${type}-${stage}`,
+                futureOnly: true,
+                visualOnly: true,
+                teamALabel:
+                  type === "winner"
+                    ? stage === 1
+                      ? "TBD"
+                      : `Winner Round ${stage - 1}`
+                    : stage === 1
+                    ? "TBD"
+                    : `Winner Redemption R${stage - 1}`,
+                teamBLabel:
+                  type === "winner"
+                    ? stage === 1
+                      ? "TBD"
+                      : `Winner Round ${stage - 1}`
+                    : stage === 1
+                    ? "TBD"
+                    : `Loser Winners R${stage}`,
+              },
+            ];
+
+      return { stage, matches };
+    });
+  }
+
+  function BracketLane({ title, byStage, maxStage, type }) {
+    const rows = getStageMatches(byStage, maxStage, type);
+    const color = type === "redemption" ? "#ef4444" : "#a855f7";
+
+    return (
+      <div
+        style={{
+          ...cardStyle(),
+          position: "relative",
+          background: "rgba(0,0,0,0.16)",
+          border:
+            type === "redemption"
+              ? "1px solid rgba(239,68,68,0.28)"
+              : "1px solid rgba(168,85,247,0.22)",
+          overflowX: "auto",
+        }}
+      >
+        <h2 style={{ marginTop: 0, color: type === "redemption" ? "#f87171" : "white" }}>
+          {title}
+        </h2>
+
+        <div
+          style={{
+            display: "flex",
+            gap: isMobile ? 14 : 26,
+            alignItems: "flex-start",
+            paddingBottom: 12,
+            minWidth: isMobile ? "max-content" : "auto",
+          }}
+        >
+          {rows.map(({ stage, matches }) => (
+            <div
+              key={stage}
+              style={{
+                minWidth: isMobile ? 215 : 235,
+                paddingTop: isMobile ? 0 : stage === 1 ? 0 : 34 * (stage - 1),
+              }}
+            >
+              <h3 style={{ marginTop: 0 }}>Round {stage}</h3>
+
+              {matches.map((match, index) => (
+                <div
+                  key={match.id || `${type}-${stage}-${index}`}
+                  style={{
+                    position: "relative",
+                    marginBottom: isMobile ? 10 : stage === 1 ? 12 : 34,
+                  }}
+                >
+                  <VisualMatchCard match={match} bracketType={type} />
+
+                  {!isMobile && stage < maxStage && (
+                    <>
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: -26,
+                          top: "50%",
+                          width: 26,
+                          height: 2,
+                          background: color,
+                          opacity: 0.7,
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: -26,
+                          top: "50%",
+                          width: 2,
+                          height: index % 2 === 0 ? 40 : -40,
+                          background: color,
+                          opacity: 0.55,
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <BracketLane
+        title="🏆 Winners Bracket"
+        byStage={winnersByStage}
+        maxStage={maxWinnerStage}
+        type="winner"
+      />
+
+      <BracketLane
+        title="🔥 Redemption Bracket"
+        byStage={redemptionByStage}
+        maxStage={maxRedemptionStage}
+        type="redemption"
+      />
+
+      <div
+        style={{
+          ...cardStyle(),
+          background: "rgba(124,58,237,0.14)",
+          border: "1px solid rgba(250,204,21,0.45)",
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>👑 Grand Final</h2>
+
+        <VisualMatchCard
+          match={
+            tournament.grandFinal || {
+              id: "future-grand-final",
+              futureOnly: true,
+              visualOnly: true,
+              teamALabel: "Winner Winners Bracket",
+              teamBLabel: "Winner Redemption Bracket",
+            }
+          }
+          bracketType="final"
+        />
+      </div>
+    </div>
+  );
+}
   const championTeam = tournament.championTeamId ? findTeam(tournament.championTeamId) : null;
 
   if (loading) {
@@ -4019,16 +4606,10 @@ const pendingCallout = state.callouts?.find(
 
         {tab === "bracket" && (
           <div style={{ display: "grid", gap: 18 }}>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 14, alignItems: "start" }}>
-              <BracketColumn title="Winners Bracket" matches={tournament.activeWinners} emptyText="No active winners matches." />
-              <BracketColumn title="Redemption Bracket" matches={tournament.activeRedemption} emptyText="No active redemption matches yet." />
-              <BracketColumn title="Grand Final" matches={tournament.grandFinal ? [tournament.grandFinal] : []} emptyText="Grand Final not ready yet." />
-            </div>
-
-            <div style={cardStyle()}>
-              <h2 style={{ marginTop: 0 }}>Completed Rounds</h2>
-
-              {tournament.completedRounds.length === 0 ? (
+    <VisualBracketBoardV3 />
+    <div style={cardStyle()}>
+      <h2 style={{ marginTop: 0 }}>Completed Rounds</h2>
+                         {tournament.completedRounds.length === 0 ? (
                 <div style={{ color: "#d6caef" }}>No completed rounds yet.</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
@@ -4118,7 +4699,17 @@ const pendingCallout = state.callouts?.find(
                 ].map(([label, field]) => (
                   <select key={field} value={sundayEntry[field]} onChange={(e) => setSundayEntry({ ...sundayEntry, [field]: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
                     <option value="">{label}</option>
-                    {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {(
+  field === "winningMvpId"
+    ? sundayWinningPlayers
+    : field === "losingMvpId"
+    ? sundayLosingPlayers
+    : sundayPlayingPlayers
+).map((p) => (
+  <option key={p.id} value={p.id}>
+    {p.name}
+  </option>
+))}
                   </select>
                 ))}
 <label style={{ display: "grid", gap: 8 }}>
@@ -4134,11 +4725,11 @@ const pendingCallout = state.callouts?.find(
     }
   >
     <option value="">No substitute player</option>
-    {players.map((p) => (
-      <option key={p.id} value={p.id}>
-        {p.name}
-      </option>
-    ))}
+    {sundayPlayingPlayers.map((p) => (
+  <option key={p.id} value={p.id}>
+    {p.name}
+  </option>
+))}
   </select>
 
   <select
@@ -4161,11 +4752,312 @@ const pendingCallout = state.callouts?.find(
                 <label>
                   <input type="checkbox" checked={sundayEntry.flawless} onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })} disabled={!canAdmin} /> Flawless victory bonus
                 </label>
+               
+<div
+  style={{
+    ...cardStyle(),
+    marginTop: 18,
+    marginBottom: 18,
+    background: "rgba(124,58,237,0.10)",
+  }}
+>
+  <h3 style={{ marginTop: 0 }}>🎲 Sunday Team Generator</h3>
 
-                <button onClick={applySundayPoints} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>Apply Sunday Points</button>
-              </div>
+  <div style={{ color: "#d6caef", marginBottom: 12 }}>
+    Select attending players, choose number of teams, then generate CR-balanced teams.
+  </div>
+
+  <label style={{ display: "block", marginBottom: 10 }}>
+    Number of Teams
+    <select
+      value={sundayTeamCount}
+      onChange={(e) => setSundayTeamCount(Number(e.target.value))}
+      style={{ ...inputStyle(false), marginTop: 6 }}
+    >
+      <option value={2}>2 Teams</option>
+      <option value={3}>3 Teams</option>
+      <option value={4}>4 Teams</option>
+    </select>
+  </label>
+
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+      gap: 8,
+      marginTop: 12,
+    }}
+  >
+    {players.map((player) => (
+      <label
+        key={player.id}
+        style={{
+          padding: 10,
+          borderRadius: 12,
+          background: sundaySelectedPlayers.includes(player.id)
+            ? "rgba(168,85,247,0.28)"
+            : "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          cursor: "pointer",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={sundaySelectedPlayers.includes(player.id)}
+          onChange={() => toggleSundayPlayer(player.id)}
+          style={{ marginRight: 8 }}
+        />
+        {player.name} • CR {getCompetitiveScore(player)}
+      </label>
+    ))}
+  </div>
+
+  <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+    <button
+      type="button"
+      onClick={generateSundayTeams}
+      style={buttonStyle(true, !canAdmin)}
+      disabled={!canAdmin}
+    >
+      🎲 Generate CR Teams
+    </button>
+
+    <button
+      type="button"
+      onClick={() => {
+        setSundaySelectedPlayers([]);
+        setSundayTeams([]);
+      }}
+      style={buttonStyle(false, false)}
+    >
+      Clear
+    </button>
+  </div>
+
+  {sundayTeams.length > 0 && (
+    <div style={{ marginTop: 18 }}>
+      <h3>Generated Teams</h3>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : `repeat(${sundayTeams.length}, 1fr)`,
+          gap: 12,
+        }}
+      >
+        {sundayTeams.map((team, index) => (
+          <div
+            key={team.name}
+            style={{
+              padding: 14,
+              borderRadius: 16,
+              background: "rgba(0,0,0,0.20)",
+              border: "1px solid rgba(168,85,247,0.25)",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
+              {team.name}
             </div>
 
+            <div style={{ color: "#facc15", fontWeight: 800, marginBottom: 8 }}>
+              Total CR: {team.totalCR}
+            </div>
+
+            {team.players.map((player) => (
+              <div key={player.id} style={{ marginBottom: 6 }}>
+                🎮 {player.name} • CR {getCompetitiveScore(player)}
+              </div>
+            ))}
+            
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+  <button
+    type="button"
+    onClick={() => applyGeneratedSundayTeam("winning", index)}
+    style={buttonStyle(true, false)}
+  >
+    🏆 Set Winner
+  </button>
+
+  <button
+    type="button"
+    onClick={() => applyGeneratedSundayTeam("losing", index)}
+    style={buttonStyle(false, false)}
+  >
+    💀 Set Loser
+  </button>
+</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
+  {sundayTeams.length > 0 && (
+  <div
+    style={{
+      display: "flex",
+      gap: 10,
+      marginTop: 16,
+      flexWrap: "wrap",
+      justifyContent: "center",
+    }}
+  >
+    <button
+      type="button"
+      onClick={lockSundayTeams}
+      style={buttonStyle(true, false)}
+    >
+      🔒 Lock Teams For Today
+    </button>
+
+    <button
+      type="button"
+      onClick={clearLockedSundayTeams}
+      style={buttonStyle(false, false)}
+    >
+      🧹 Clear Locked Teams
+    </button>
+  </div>
+)}
+</div>
+{sundayTeams.length > 0 && (
+  <div
+    style={{
+      ...cardStyle(),
+      marginTop: 18,
+      background: "rgba(0,0,0,0.18)",
+    }}
+  >
+    <h3 style={{ marginTop: 0 }}>🎮 Sunday Round Manager</h3>
+
+    <div style={{ color: "#d6caef", marginBottom: 12 }}>
+      Create each round from the locked teams. This saves the Sunday match flow.
+    </div>
+
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
+        gap: 10,
+      }}
+    >
+      <input
+        value={sundayRoundDraft.roundName}
+        onChange={(e) =>
+          setSundayRoundDraft({
+            ...sundayRoundDraft,
+            roundName: e.target.value,
+          })
+        }
+        style={inputStyle(false)}
+        placeholder="Round name"
+      />
+
+      <select
+        value={sundayRoundDraft.teamAIndex}
+        onChange={(e) =>
+          setSundayRoundDraft({
+            ...sundayRoundDraft,
+            teamAIndex: e.target.value,
+          })
+        }
+        style={inputStyle(false)}
+      >
+        <option value="">Team A</option>
+        {sundayTeams.map((team, index) => (
+          <option key={team.name} value={index}>
+            {team.name}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={sundayRoundDraft.teamBIndex}
+        onChange={(e) =>
+          setSundayRoundDraft({
+            ...sundayRoundDraft,
+            teamBIndex: e.target.value,
+          })
+        }
+        style={inputStyle(false)}
+      >
+        <option value="">Team B</option>
+        {sundayTeams.map((team, index) => (
+          <option key={team.name} value={index}>
+            {team.name}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={sundayRoundDraft.winnerIndex}
+        onChange={(e) =>
+          setSundayRoundDraft({
+            ...sundayRoundDraft,
+            winnerIndex: e.target.value,
+          })
+        }
+        style={inputStyle(false)}
+      >
+        <option value="">Winner optional</option>
+        {sundayTeams.map((team, index) => (
+          <option key={team.name} value={index}>
+            {team.name}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    <button
+      type="button"
+      onClick={createSundayRound}
+      style={{ ...buttonStyle(true, false), marginTop: 12 }}
+    >
+      ➕ Save Round
+    </button>
+
+    {sundayRounds.length > 0 && (
+      <div style={{ marginTop: 18 }}>
+        <h3>Saved Sunday Rounds</h3>
+
+        {sundayRounds.map((round) => {
+          const teamA = sundayTeams[round.teamAIndex];
+          const teamB = sundayTeams[round.teamBIndex];
+          const winner =
+            round.winnerIndex === "" ? null : sundayTeams[round.winnerIndex];
+
+          return (
+            <div
+              key={round.id}
+              style={{
+                padding: 12,
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.06)",
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>
+                {round.roundName}
+              </div>
+
+              <div style={{ color: "#d6caef", marginTop: 4 }}>
+                {teamA?.name || "Team A"} vs {teamB?.name || "Team B"}
+              </div>
+
+              {winner && (
+                <div style={{ color: "#facc15", marginTop: 4, fontWeight: 800 }}>
+                  🏆 Winner: {winner.name}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+)}
+                <button onClick={applySundayPoints} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>Apply Sunday Points</button>
+              </div>
+              </div>
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Sunday Match History</h2>
               {state.sundayHistory.length === 0 ? (
