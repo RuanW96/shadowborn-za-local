@@ -4021,13 +4021,20 @@ const pendingCallout = state.callouts?.find(
   Move to Promotion Squad
 </button>
 
-    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+    <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+    marginTop: 10,
+  }}
+>
       <button
         type="button"
         onClick={() => markTraining(player.id, "attended")}
         style={buttonStyle(false, false)}
       >
-        ✅ Attended
+        ✅ Train
       </button>
 
       <button
@@ -4048,7 +4055,7 @@ const pendingCallout = state.callouts?.find(
 }
   style={buttonStyle(true, false)}
 >
-  🏆 + Challenge
+  🏆 Weekly 
 </button>
       <button
         type="button"
@@ -4137,7 +4144,14 @@ const pendingCallout = state.callouts?.find(
                         )}
                       </div>
 
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+    marginTop: 12,
+  }}
+>
                         {canAdmin && (
   <>
     <button
