@@ -445,6 +445,11 @@ const [sundayRounds, setSundayRounds] = useState([]);
   rank: "",
   proofUrl: "",
 });
+const [weeklyAwardDraft, setWeeklyAwardDraft] = useState({
+  playerId: "",
+  amount: 10,
+  reason: "",
+});
   const players = (state.players || []).map((p) => ({
   codRank: "",
   teamRole: "challenger",
@@ -485,7 +490,7 @@ const [sundayRounds, setSundayRounds] = useState([]);
             Number(b.trainingAttended || 0) * 3 -
             Number(b.trainingMissed || 0) * 5;
 
-        return scoreB - scoreA || a.name.localeCompare(b.name);
+        return getCompetitiveScore(b) - getCompetitiveScore(a) || a.name.localeCompare(b.name);
       }),
     [players]
   );
@@ -499,6 +504,10 @@ const challengers = players.filter(
   (p) => !["ateam", "promotion"].includes(p.teamRole)
 );
   const challengerPlayers = competitivePlayers.filter((p) => p.teamRole !== "a-team");
+  const weeklyChallengeLeader = [...challengerPlayers].sort(
+  (a, b) =>
+    (b.weeklyChallenges || 0) - (a.weeklyChallenges || 0)
+)[0];
   const promotionZonePlayers = challengerPlayers.slice(0, 4);
   const lowestATeamPlayer = aTeamPlayers.length ? aTeamPlayers[aTeamPlayers.length - 1] : null;
 
@@ -589,9 +598,44 @@ const sundayLosingPlayers = players.filter((p) =>
 }
 
 function getCompetitiveScore(player) {
-  return getRawCompetitiveScore(player) + Number(player.crAdjustment || 0);
+  return (
+  getRawCompetitiveScore(player) +
+  Number(player.crAdjustment || 0) +
+  Number(player.weeklyChallenges || 0) * 20
+);
 }
+function awardWeeklyChallenge() {
+  if (!canAdmin) return;
 
+  const amount = Number(weeklyAwardDraft.amount || 0);
+  if (!weeklyAwardDraft.playerId || !amount) return;
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) =>
+      p.id === weeklyAwardDraft.playerId
+        ? {
+            ...p,
+            weeklyChallenges: Number(p.weeklyChallenges || 0) + 1,
+            weeklyChallengeHistory: [
+              ...(p.weeklyChallengeHistory || []),
+              {
+                amount,
+                reason: weeklyAwardDraft.reason || "Weekly Challenge",
+                date: new Date().toLocaleDateString(),
+              },
+            ],
+          }
+        : p
+    ),
+  }));
+
+  setWeeklyAwardDraft({
+    playerId: "",
+    amount: 10,
+    reason: "",
+  });
+}
   function setTeamRole(playerId, teamRole) {
     if (!canAdmin) return;
 
@@ -3949,6 +3993,9 @@ const pendingCallout = state.callouts?.find(
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
                         <div style={badgeStyle()}>CR {getCompetitiveScore(player)}</div>
+                        <div style={badgeStyle("rgba(250,204,21,0.13)", "#facc15")}>
+  🏆 Challenges {player.weeklyChallenges || 0}
+</div>
                         <div style={badgeStyle()}>W {player.wins} / L {player.losses}</div>
                         <div style={badgeStyle("rgba(34,197,94,0.13)", "#86efac")}>Training {player.trainingAttended || 0}</div>
                         <div style={badgeStyle("rgba(239,68,68,0.13)", "#fca5a5")}>Missed {player.trainingMissed || 0}</div>
@@ -3990,7 +4037,19 @@ const pendingCallout = state.callouts?.find(
       >
         ❌ Missed
       </button>
-
+<button
+  type="button"
+  onClick={() =>
+  setWeeklyAwardDraft({
+    playerId: player.id,
+    amount: 10,
+    reason: "",
+  })
+}
+  style={buttonStyle(true, false)}
+>
+  🏆 + Challenge
+</button>
       <button
         type="button"
         onClick={() => resetTraining(player.id)}
@@ -4064,9 +4123,13 @@ const pendingCallout = state.callouts?.find(
     {player.playStyle === "FLEX" && "🔀 FLEX"}
   </div>
 )}
-                        <div style={{ color: "#d6caef", marginTop: 4 }}>
-                          CR {getCompetitiveScore(player)} • W {player.wins} / L {player.losses} • MVP {player.mvpPoints || 0}
-                        </div>
+                       <div style={{ color: "#d6caef", marginTop: 4 }}>
+  CR {getCompetitiveScore(player)} •
+  🏆 Weekly {player.weeklyChallenges || 0} •
+  W {player.wins} /
+  L {player.losses} •
+  MVP {player.mvpPoints || 0}
+</div>
                         {lowestATeamPlayer && (
                           <div style={{ color: "#fca5a5", marginTop: 4, fontWeight: 800 }}>
                             Target spot: {lowestATeamPlayer.name}
@@ -4151,6 +4214,19 @@ const pendingCallout = state.callouts?.find(
                       <div style={{ display: "flex", gap: 6, justifyContent: isMobile ? "flex-start" : "flex-end", flexWrap: "wrap" }}>
                         <button type="button" onClick={() => updateTraining(player.id, "attended", 1)} style={buttonStyle(false, false)}>+ Training</button>
                         <button type="button" onClick={() => updateTraining(player.id, "missed", 1)} style={buttonStyle(false, false)}>+ Missed</button>
+                        <button
+  type="button"
+  onClick={() =>
+  setWeeklyAwardDraft({
+    playerId: player.id,
+    amount: 10,
+    reason: "",
+  })
+}
+  style={buttonStyle(true, false)}
+>
+  🏆 + Challenge
+</button>
                         <button type="button" onClick={() => setTeamRole(player.id, "a-team")} style={buttonStyle(true, false)}>A-Team</button>
                       </div>
                     )}
@@ -5224,6 +5300,74 @@ const pendingCallout = state.callouts?.find(
           </div>
         )}
             </div>
+                  {weeklyAwardDraft.playerId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div style={{ ...cardStyle(), maxWidth: 460, width: "100%" }}>
+            <h2 style={{ marginTop: 0 }}>🏆 Weekly Challenge Completed</h2>
+
+            <label>
+              CR Reward
+              <input
+                type="number"
+                value={weeklyAwardDraft.amount}
+                onChange={(e) =>
+                  setWeeklyAwardDraft({
+                    ...weeklyAwardDraft,
+                    amount: e.target.value,
+                  })
+                }
+                style={inputStyle(false)}
+              />
+            </label>
+
+            <label>
+              Reason
+              <input
+                value={weeklyAwardDraft.reason}
+                onChange={(e) =>
+                  setWeeklyAwardDraft({
+                    ...weeklyAwardDraft,
+                    reason: e.target.value,
+                  })
+                }
+                placeholder="Example: Weekly AR challenge completed"
+                style={inputStyle(false)}
+              />
+            </label>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button type="button" onClick={awardWeeklyChallenge} style={buttonStyle(true, false)}>
+                Award
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setWeeklyAwardDraft({
+                    playerId: "",
+                    amount: 10,
+                    reason: "",
+                  })
+                }
+                style={buttonStyle(false, false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
