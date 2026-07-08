@@ -3869,66 +3869,176 @@ const pendingCallout = state.callouts?.find(
 </>
 
         {tab === "dashboard" && (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 20 }}>
-              <div style={cardStyle()}><Users /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Total Players</div><div style={{ fontSize: 32, fontWeight: 900 }}>{players.length}</div></div>
-              <div style={cardStyle()}><Swords /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Teams</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.teams.length}</div></div>
-              <div style={cardStyle()}><Target /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Format</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.format}</div></div>
-              <div style={cardStyle()}><Crown /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Champion</div><div style={{ fontSize: 20, fontWeight: 900 }}>{championTeam ? getTeamName(championTeam) : state.championBanner?.teamName || "TBD"}</div></div>
-            </div>
+  <>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 20 }}>
+      <div style={cardStyle()}><Users /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Total Players</div><div style={{ fontSize: 32, fontWeight: 900 }}>{players.length}</div></div>
+      <div style={cardStyle()}><Swords /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Teams</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.teams.length}</div></div>
+      <div style={cardStyle()}><Target /><div style={{ marginTop: 12, color: "#cfc4e8" }}>Tournament Format</div><div style={{ fontSize: 32, fontWeight: 900 }}>{tournament.format}</div></div>
+      <div
+  style={{
+    ...cardStyle(),
+    background: "linear-gradient(135deg, rgba(250,204,21,0.18), rgba(124,58,237,0.16))",
+    border: "1px solid rgba(250,204,21,0.45)",
+  }}
+>
+  <Crown />
+  <div style={{ marginTop: 12, color: "#fde68a", fontWeight: 800 }}>
+    Defending Champion
+  </div>
+  <div style={{ fontSize: 20, fontWeight: 900 }}>
+    {championTeam ? getTeamName(championTeam) : state.championBanner?.teamName || "TBD"}
+  </div>
+  <div style={{ color: "#d6caef", marginTop: 6, fontSize: 13 }}>
+    Current Shadowborn ZA tournament champion
+  </div>
+</div>
+    </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr", gap: 16 }}>
-              <div style={cardStyle()}>
-                <h2 style={{ marginTop: 0 }}>Top Leaderboard</h2>
-                <div style={{ display: "grid", gap: 12 }}>
-                  {sortedPlayers.slice(0, 5).map((player) => (
-                    <PlayerCard key={player.id} player={player} />
-                  ))}
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr", gap: 16 }}>
+      <div style={cardStyle()}>
+        <h2 style={{ marginTop: 0 }}>👑 Official A-Team</h2>
+        <div style={{ color: "#d6caef", marginBottom: 14 }}>
+          The current 4-player roster representing Shadowborn ZA in competitive matches.
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+          {aTeamPlayers.map((player, index) => (
+            <div
+              key={player.id}
+              style={{
+                padding: 14,
+                borderRadius: 18,
+                background: index === 0
+                  ? "linear-gradient(135deg, rgba(250,204,21,0.18), rgba(124,58,237,0.12))"
+                  : "rgba(255,255,255,0.05)",
+                border: index === 0
+                  ? "1px solid rgba(250,204,21,0.45)"
+                  : "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <img
+                  src={player.avatar || DEFAULT_LOGO}
+                  alt={player.name}
+                  style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid rgba(250,204,21,0.45)" }}
+                />
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 18 }}>#{index + 1} {player.name}</div>
+                  <div style={{ color: "#fde68a", fontWeight: 800 }}>A-Team Pro</div>
                 </div>
               </div>
 
-              <div style={{ display: "grid", gap: 16 }}>
-                <div style={cardStyle()}>
-                  <h2 style={{ marginTop: 0 }}>Quick Branding</h2>
-
-                  <div style={{ marginBottom: 8 }}>Clan Name</div>
-                  <input
-                    value={state.clanName}
-                    onChange={(e) => updateState((prev) => ({ ...prev, clanName: e.target.value }))}
-                    style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                    disabled={!canAdmin}
-                  />
-
-                  <div style={{ marginBottom: 8 }}>Tagline</div>
-                  <input
-                    value={state.tagline}
-                    onChange={(e) => updateState((prev) => ({ ...prev, tagline: e.target.value }))}
-                    style={{ ...inputStyle(!canAdmin), marginBottom: 12 }}
-                    disabled={!canAdmin}
-                  />
-
-                  <div style={{ marginBottom: 8 }}>Logo Path</div>
-                  <input
-                    value={state.logoUrl}
-                    onChange={(e) => updateState((prev) => ({ ...prev, logoUrl: e.target.value }))}
-                    style={inputStyle(!canAdmin)}
-                    disabled={!canAdmin}
-                  />
-                </div>
-
-                <div style={cardStyle()}>
-                  <h2 style={{ marginTop: 0 }}>Vote Snapshot</h2>
-                  {state.poll.options.map((option) => (
-                    <div key={option.id} style={{ display: "flex", justifyContent: "space-between", padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)", marginBottom: 10 }}>
-                      <div>{option.label}</div>
-                      <span style={badgeStyle()}>{option.votes} votes</span>
-                    </div>
-                  ))}
-                </div>
+              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                <div style={badgeStyle()}>CR {getCompetitiveScore(player)}</div>
+                <div style={badgeStyle("rgba(250,204,21,0.13)", "#facc15")}>🏆 Weekly {player.weeklyChallenges || 0}</div>
+                <div style={badgeStyle()}>W {player.wins} / L {player.losses}</div>
+                <div style={badgeStyle("rgba(34,197,94,0.13)", "#86efac")}>Training {player.trainingAttended || 0}</div>
               </div>
             </div>
-          </>
-        )}
+          ))}
+        </div>
+        <div style={{ display: "grid", gap: 16 }}>
+  <div style={cardStyle()}>
+    <h2 style={{ marginTop: 0 }}>🏅 Competitive Rankings</h2>
+    <div style={{ color: "#d6caef", marginBottom: 18 }}>
+      Current CR standings across the clan.
+    </div>
+
+    {(() => {
+  const topCRPlayers = [...players]
+    .sort((a, b) => getCompetitiveScore(b) - getCompetitiveScore(a))
+    .slice(0, 4);
+
+  const highestCR = Math.max(
+    ...topCRPlayers.map((p) => getCompetitiveScore(p)),
+    1
+  );
+
+  return topCRPlayers.map((player, index) => (
+        <div
+          key={player.id}
+          style={{
+            marginBottom: 14,
+            padding: 12,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.05)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontWeight: 800,
+              marginBottom: 8,
+            }}
+          >
+            <span>{["🥇", "🥈", "🥉", "⭐"][index]} {player.name}</span>
+            <span>{getCompetitiveScore(player)} CR</span>
+          </div>
+
+          <div
+            style={{
+              height: 8,
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.08)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${(getCompetitiveScore(player) / highestCR) * 100}%`,
+                height: "100%",
+                background: "linear-gradient(90deg,#facc15,#7c3aed)",
+              }}
+            />
+          </div>
+        </div>
+      ));
+})()}
+  </div>
+</div>
+      </div>
+
+      <div style={{ display: "grid", gap: 16 }}>
+        <div style={cardStyle()}>
+          <h2 style={{ marginTop: 0 }}>🔥 Weekly Challenge Leaders</h2>
+          <div style={{ color: "#d6caef", marginBottom: 18 }}>This week's hardest grinders.</div>
+
+          {[...players]
+            .sort((a, b) => (b.weeklyChallenges || 0) - (a.weeklyChallenges || 0))
+            .slice(0, 4)
+            .map((player, index) => (
+              <div key={player.id} style={{ marginBottom: 14, padding: 12, borderRadius: 14, background: "rgba(255,255,255,0.05)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, marginBottom: 8 }}>
+                  <span>{["🥇", "🥈", "🥉", "⭐"][index]} {player.name}</span>
+                  <span>{player.weeklyChallenges || 0}</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: `${Math.min((player.weeklyChallenges || 0) * 5, 100)}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg,#facc15,#a855f7)",
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div style={cardStyle()}>
+          <h2 style={{ marginTop: 0 }}>Vote Snapshot</h2>
+          {state.poll.options.map((option) => (
+            <div key={option.id} style={{ display: "flex", justifyContent: "space-between", padding: 12, borderRadius: 14, background: "rgba(0,0,0,0.18)", marginBottom: 10 }}>
+              <div>{option.label}</div>
+              <span style={badgeStyle()}>{option.votes} votes</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </>
+)}
         {tab === "competition" && (
           <div style={{ display: "grid", gap: 16 }}>
             <div style={cardStyle()}>
