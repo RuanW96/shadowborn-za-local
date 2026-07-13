@@ -422,8 +422,8 @@ export default function App() {
     objectiveLeaderId: "",
     bestKdId: "",
     zeroDeathId: "",
-    substitutePlayerId: "",
-substituteTeamType: "winning",
+    winningSubstituteIds: [],
+losingSubstituteIds: [],
     flawless: false,
   });
 const [sundayTeams, setSundayTeams] = useState([]);
@@ -571,18 +571,30 @@ const filteredCompletedCallouts =
   const sundayPlayingIds = [
   ...(sundayEntry.winningTeamIds || []),
   ...(sundayEntry.losingTeamIds || []),
+  ...(sundayEntry.winningSubstituteIds || []),
+  ...(sundayEntry.losingSubstituteIds || []),
 ].map(Number);
 
 const sundayPlayingPlayers = players.filter((p) =>
   sundayPlayingIds.includes(Number(p.id))
 );
 
+const sundayWinningPlayerIds = [
+  ...(sundayEntry.winningTeamIds || []),
+  ...(sundayEntry.winningSubstituteIds || []),
+].map(Number);
+
+const sundayLosingPlayerIds = [
+  ...(sundayEntry.losingTeamIds || []),
+  ...(sundayEntry.losingSubstituteIds || []),
+].map(Number);
+
 const sundayWinningPlayers = players.filter((p) =>
-  (sundayEntry.winningTeamIds || []).map(Number).includes(Number(p.id))
+  sundayWinningPlayerIds.includes(Number(p.id))
 );
 
 const sundayLosingPlayers = players.filter((p) =>
-  (sundayEntry.losingTeamIds || []).map(Number).includes(Number(p.id))
+  sundayLosingPlayerIds.includes(Number(p.id))
 );
 
   function getRawCompetitiveScore(player) {
@@ -1788,7 +1800,45 @@ function toggleSundayPlayer(playerId) {
       : [...prev, playerId]
   );
 }
+function toggleSundaySubstitute(teamType, playerId) {
+  if (!canAdmin) return;
 
+  const field =
+    teamType === "winning"
+      ? "winningSubstituteIds"
+      : "losingSubstituteIds";
+
+  const otherField =
+    teamType === "winning"
+      ? "losingSubstituteIds"
+      : "winningSubstituteIds";
+
+  setSundayEntry((prev) => {
+    const currentIds = (prev[field] || []).map(Number);
+    const otherIds = (prev[otherField] || []).map(Number);
+    const id = Number(playerId);
+
+    if (
+      (prev.winningTeamIds || []).map(Number).includes(id) ||
+      (prev.losingTeamIds || []).map(Number).includes(id)
+    ) {
+      alert("This player is already selected in a main team.");
+      return prev;
+    }
+
+    if (otherIds.includes(id)) {
+      alert("This player is already selected for the other team.");
+      return prev;
+    }
+
+    return {
+      ...prev,
+      [field]: currentIds.includes(id)
+        ? currentIds.filter((selectedId) => selectedId !== id)
+        : [...currentIds, id],
+    };
+  });
+}
 function generateSundayTeams() {
   if (!canAdmin) return;
 
@@ -1838,12 +1888,29 @@ function applyGeneratedSundayTeam(teamType, teamIndex) {
   const team = sundayTeams[teamIndex];
   if (!team) return;
 
-  const playerIds = team.players.map((p) => p.id);
+  const allPlayerIds = team.players.map((p) => Number(p.id));
 
-  setSundayEntry((prev) => ({
-    ...prev,
-    [teamType === "winning" ? "winningTeamIds" : "losingTeamIds"]: playerIds,
-  }));
+  // First 4 are the main players.
+  const mainPlayerIds = allPlayerIds.slice(0, 4);
+
+  // Anyone after the first 4 becomes a rotation/substitute.
+  const substituteIds = allPlayerIds.slice(4);
+
+  setSundayEntry((prev) => {
+    if (teamType === "winning") {
+      return {
+        ...prev,
+        winningTeamIds: mainPlayerIds,
+        winningSubstituteIds: substituteIds,
+      };
+    }
+
+    return {
+      ...prev,
+      losingTeamIds: mainPlayerIds,
+      losingSubstituteIds: substituteIds,
+    };
+  });
 }
 function createSundayRound() {
   if (!canAdmin) return;
@@ -1934,6 +2001,14 @@ function clearLockedSundayTeams() {
   }
 
   updateState((prev) => {
+    const winningSubs = new Set(
+  (sundayEntry.winningSubstituteIds || []).map(Number)
+);
+
+const losingSubs = new Set(
+  (sundayEntry.losingSubstituteIds || []).map(Number)
+);
+
     const updatedPlayers = prev.players.map((p) => {
       let points = Number(p.points) || 0;
       let wins = Number(p.wins) || 0;
@@ -1950,20 +2025,20 @@ function clearLockedSundayTeams() {
       }
 
       if (loserSet.has(playerId)) {
-        points += 5;
+        points -= 5;
         losses += 1;
         activityPoints += 1;
       }
-      if (Number(sundayEntry.substitutePlayerId) === playerId) {
-  if (sundayEntry.substituteTeamType === "winning") {
-    points += 10;
-    activityPoints += 1;
-  } else {
-    points += 5;
-    activityPoints += 1;
-  }
-}
-
+      if (winningSubs.has(playerId)) {
+      points += 10;
+      wins += 1;
+      activityPoints += 1;
+      }
+       if (losingSubs.has(playerId)) {
+      points -= 5;
+      losses += 1;
+      activityPoints += 1;
+       }
       if (Number(sundayEntry.winningMvpId) === playerId) {
         points += 10;
         mvpPoints += 10;
@@ -2026,8 +2101,8 @@ function clearLockedSundayTeams() {
     objectiveLeaderId: "",
     bestKdId: "",
     zeroDeathId: "",
-    substitutePlayerId: "",
-substituteTeamType: "winning",
+    winningSubstituteIds: [],
+losingSubstituteIds: [],
     flawless: false,
   });
 }
@@ -4912,43 +4987,121 @@ const pendingCallout = state.callouts?.find(
 ))}
                   </select>
                 ))}
-<label style={{ display: "grid", gap: 8 }}>
-  <span>Rotation / Substitute Player</span>
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  }}
+>
+  <div>
+    <h4 style={{ marginTop: 0, color: "#86efac" }}>
+      🏆 Winning Team Extra Players
+    </h4>
 
-  <select
-    value={sundayEntry.substitutePlayerId}
-    onChange={(e) =>
-      setSundayEntry({
-        ...sundayEntry,
-        substitutePlayerId: e.target.value,
-      })
-    }
-  >
-    <option value="">No substitute player</option>
-    {sundayPlayingPlayers.map((p) => (
-  <option key={p.id} value={p.id}>
-    {p.name}
-  </option>
-))}
-  </select>
+    <div style={{ color: "#d6caef", fontSize: 13, marginBottom: 10 }}>
+      Each selected player receives +10 points.
+    </div>
 
-  <select
-    value={sundayEntry.substituteTeamType}
-    onChange={(e) =>
-      setSundayEntry({
-        ...sundayEntry,
-        substituteTeamType: e.target.value,
-      })
-    }
-  >
-    <option value="winning">
-      Give Winning Team Points (+10)
-    </option>
-    <option value="losing">
-      Give Losing Team Points (+5)
-    </option>
-  </select>
-</label>
+    <div style={{ display: "grid", gap: 8 }}>
+      {players
+        .filter(
+          (player) =>
+            !(sundayEntry.winningTeamIds || [])
+              .map(Number)
+              .includes(Number(player.id)) &&
+            !(sundayEntry.losingTeamIds || [])
+              .map(Number)
+              .includes(Number(player.id))
+        )
+        .map((player) => (
+          <label
+            key={`winning-sub-${player.id}`}
+            style={{
+              padding: 9,
+              borderRadius: 10,
+              background: (sundayEntry.winningSubstituteIds || [])
+                .map(Number)
+                .includes(Number(player.id))
+                ? "rgba(34,197,94,0.20)"
+                : "rgba(0,0,0,0.18)",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={(sundayEntry.winningSubstituteIds || [])
+                .map(Number)
+                .includes(Number(player.id))}
+              onChange={() =>
+                toggleSundaySubstitute("winning", player.id)
+              }
+              disabled={!canAdmin}
+              style={{ marginRight: 8 }}
+            />
+
+            {player.name}
+          </label>
+        ))}
+    </div>
+  </div>
+
+  <div>
+    <h4 style={{ marginTop: 0, color: "#fca5a5" }}>
+      💀 Losing Team Extra Players
+    </h4>
+
+    <div style={{ color: "#d6caef", fontSize: 13, marginBottom: 10 }}>
+      Each selected player receives -5 points.
+    </div>
+
+    <div style={{ display: "grid", gap: 8 }}>
+      {players
+        .filter(
+          (player) =>
+            !(sundayEntry.winningTeamIds || [])
+              .map(Number)
+              .includes(Number(player.id)) &&
+            !(sundayEntry.losingTeamIds || [])
+              .map(Number)
+              .includes(Number(player.id))
+        )
+        .map((player) => (
+          <label
+            key={`losing-sub-${player.id}`}
+            style={{
+              padding: 9,
+              borderRadius: 10,
+              background: (sundayEntry.losingSubstituteIds || [])
+                .map(Number)
+                .includes(Number(player.id))
+                ? "rgba(239,68,68,0.18)"
+                : "rgba(0,0,0,0.18)",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={(sundayEntry.losingSubstituteIds || [])
+                .map(Number)
+                .includes(Number(player.id))}
+              onChange={() =>
+                toggleSundaySubstitute("losing", player.id)
+              }
+              disabled={!canAdmin}
+              style={{ marginRight: 8 }}
+            />
+
+            {player.name}
+          </label>
+        ))}
+    </div>
+  </div>
+</div>
                 <label>
                   <input type="checkbox" checked={sundayEntry.flawless} onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })} disabled={!canAdmin} /> Flawless victory bonus
                 </label>
