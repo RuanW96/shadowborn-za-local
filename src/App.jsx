@@ -275,8 +275,8 @@ function getOfficialWinners(matches) {
 function getOfficialLosers(matches) {
   return matches.filter((m) => m.locked && m.loserId).map((m) => m.loserId);
 }
-function LeaderboardCard({ player, index }) {
-  const rank = getRank(player.points);
+function LeaderboardCard({ player, index, competitiveScore }) {
+  const rank = getRank(competitiveScore ?? 0);
   const isMainSlayer = index < 4;
 
   return (
@@ -368,7 +368,7 @@ animation: "none",
 )}
 
             <div style={{ marginTop: 6, color: "#e9ddff", fontWeight: 700 }}>
-              {player.points} pts • W {player.wins} / L {player.losses} • Tournament Wins {player.tournamentWins}
+              CR {competitiveScore ?? 0} • W {player.wins} / L {player.losses} • Tournament Wins {player.tournamentWins}
             </div>
           </div>
 
@@ -494,7 +494,19 @@ const [weeklyAwardDraft, setWeeklyAwardDraft] = useState({
       }),
     [players]
   );
+const smgPlayers = competitivePlayers.filter(
+  (player) => player.playStyle === "SMG"
+);
 
+const arPlayers = competitivePlayers.filter(
+  (player) => player.playStyle === "AR"
+);
+
+const noPreferencePlayers = competitivePlayers.filter(
+  (player) =>
+    player.playStyle !== "SMG" &&
+    player.playStyle !== "AR"
+);
   const aTeamPlayers = competitivePlayers.filter((p) => p.teamRole === "a-team").slice(0, 4);
   const promotionTeam = players.filter(
   (p) => p.teamRole === "promotion"
@@ -2266,6 +2278,24 @@ function rejectRankRequest(requestId) {
 async function postLeaderboardToDiscord() {
   if (!canAdmin) return;
 
+  const preparePlayers = (playerList) =>
+    playerList.slice(0, 10).map((player, index) => ({
+      position: index + 1,
+      id: player.id,
+      name: player.name,
+      cr: getCompetitiveScore(player),
+      wins: Number(player.wins || 0),
+      losses: Number(player.losses || 0),
+      tournamentWins: Number(player.tournamentWins || 0),
+      playStyle: player.playStyle || "",
+    }));
+
+  const unassignedPlayers = noPreferencePlayers.map((player) => ({
+    id: player.id,
+    name: player.name,
+    cr: getCompetitiveScore(player),
+  }));
+
   try {
     const response = await fetch("/api/post-discord-leaderboard", {
       method: "POST",
@@ -2273,18 +2303,34 @@ async function postLeaderboardToDiscord() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        leaderboard: sortedPlayers,
+        title: "Shadowborn ZA Competitive Rankings",
+        smgLeaderboard: preparePlayers(smgPlayers),
+        arLeaderboard: preparePlayers(arPlayers),
+        noPreferencePlayers: unassignedPlayers,
       }),
     });
 
-    const result = await response.json();
+    const responseText = await response.text();
+
+let result = {};
+
+try {
+  result = responseText ? JSON.parse(responseText) : {};
+} catch {
+  result = {
+    error: responseText || "The API returned an empty response.",
+  };
+}
 
     if (!response.ok) {
-      alert("Discord post failed: " + (result.error || "Unknown error"));
+      alert(
+        "Discord post failed: " +
+          (result.error || "Unknown error")
+      );
       return;
     }
 
-    alert("Leaderboard posted to Discord successfully!");
+    alert("CR leaderboards posted to Discord successfully!");
   } catch (error) {
     alert("Discord post failed: " + error.message);
   }
@@ -3495,10 +3541,9 @@ const pendingCallout = state.callouts?.find(
         color: "#fff",
       }}
     >
-      <option value="">Select Play Style</option>
+      <option value="">Select Preferred Weapon</option>
       <option value="AR">🎯 AR</option>
       <option value="SMG">⚡ SMG</option>
-      <option value="FLEX">🔀 FLEX</option>
     </select>
   </div>
 )}
@@ -3518,7 +3563,6 @@ const pendingCallout = state.callouts?.find(
   >
     {profilePlayer.playStyle === "AR" && "🎯 AR"}
     {profilePlayer.playStyle === "SMG" && "⚡ SMG"}
-    {profilePlayer.playStyle === "FLEX" && "🔀 FLEX"}
   </span>
 )}
             </div>
@@ -4545,9 +4589,101 @@ const pendingCallout = state.callouts?.find(
       ))}
   </div>
 )}
-         {sortedPlayers.map((player, index) => (
-  <LeaderboardCard key={player.id} player={player} index={index} />
-))}   
+    <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+    gap: 16,
+    alignItems: "start",
+  }}
+>
+  {/* SMG LEADERBOARD */}
+  <div style={cardStyle()}>
+    <h2 style={{ marginTop: 0 }}>⚡ SMG Leaderboard</h2>
+
+    <div style={{ color: "#d6caef", marginBottom: 16 }}>
+      Ranked by Competitive Rating
+    </div>
+
+    {smgPlayers.length === 0 ? (
+      <div style={{ color: "#9d90b7" }}>
+        No SMG players selected yet.
+      </div>
+    ) : (
+      smgPlayers.slice(0, 10).map((player, index) => (
+        <LeaderboardCard
+          key={player.id}
+          player={player}
+          index={index}
+          competitiveScore={getCompetitiveScore(player)}
+        />
+      ))
+    )}
+  </div>
+
+  {/* AR LEADERBOARD */}
+  <div style={cardStyle()}>
+    <h2 style={{ marginTop: 0 }}>🎯 AR Leaderboard</h2>
+
+    <div style={{ color: "#d6caef", marginBottom: 16 }}>
+      Ranked by Competitive Rating
+    </div>
+
+    {arPlayers.length === 0 ? (
+      <div style={{ color: "#9d90b7" }}>
+        No AR players selected yet.
+      </div>
+    ) : (
+      arPlayers.slice(0, 10).map((player, index) => (
+        <LeaderboardCard
+          key={player.id}
+          player={player}
+          index={index}
+          competitiveScore={getCompetitiveScore(player)}
+        />
+      ))
+    )}
+  </div>
+</div>
+
+{/* NO PREFERENCE */}
+{noPreferencePlayers.length > 0 && (
+  <div style={{ ...cardStyle(), marginTop: 16 }}>
+    <h2 style={{ marginTop: 0 }}>❔ No Preferred Weapon Selected</h2>
+
+    <div style={{ color: "#d6caef", marginBottom: 16 }}>
+      These players must select either SMG or AR from their profile.
+    </div>
+
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: isMobile
+          ? "1fr"
+          : "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 10,
+      }}
+    >
+      {noPreferencePlayers.map((player) => (
+        <div
+          key={player.id}
+          style={{
+            padding: 12,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <strong>{player.name}</strong>
+          <span>{getCompetitiveScore(player)} CR</span>
+        </div>
+      ))}
+    </div>
+  </div>
+)}     
 {(state.seasonHistory || []).length > 0 && (
   <div style={{ ...cardStyle(), marginTop: 18 }}>
     <h2>🏆 Season Leaderboard History</h2>

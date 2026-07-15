@@ -4,88 +4,136 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { leaderboard } = req.body;
+    const {
+      title = "Shadowborn ZA Competitive Rankings",
+      smgLeaderboard = [],
+      arLeaderboard = [],
+      noPreferencePlayers = [],
+    } = req.body;
 
-    if (!leaderboard || leaderboard.length === 0) {
-      return res.status(400).json({ error: "No leaderboard data received" });
+    if (
+      smgLeaderboard.length === 0 &&
+      arLeaderboard.length === 0 &&
+      noPreferencePlayers.length === 0
+    ) {
+      return res.status(400).json({
+        error: "No leaderboard data received",
+      });
     }
 
-    const webhookUrl = process.env.DISCORD_LEADERBOARD_WEBHOOK_URL;
+    const webhookUrl =
+      process.env.DISCORD_LEADERBOARD_WEBHOOK_URL;
 
     if (!webhookUrl) {
-      return res.status(500).json({ error: "Webhook not configured" });
+      return res.status(500).json({
+        error: "Webhook not configured",
+      });
     }
 
-    // Sort players by points
-    const sorted = leaderboard
-  .sort((a, b) => Number(b.points || 0) - Number(a.points || 0));
-      
-      
+    const formatLeaderboard = (playerList) =>
+      playerList
+        .slice(0, 10)
+        .map((player, index) => {
+          const medal =
+            index === 0
+              ? "🥇"
+              : index === 1
+              ? "🥈"
+              : index === 2
+              ? "🥉"
+              : index === 3
+              ? "🏅"
+              : `#${index + 1}`;
 
-    const description = sorted
-      .map((player, index) => {
-        const medal =
-          index === 0 ? "🥇" :
-          index === 1 ? "🥈" :
-          index === 2 ? "🥉" :
-          `#${index + 1}`;
+          const cr = Number(player.cr || 0);
 
-        const points = Number(player.points || 0);
+          return `${medal} **${player.name}** — **${cr} CR**`;
+        })
+        .join("\n");
 
-const flame =
-  points >= 601 ? "🔥🔴" :
-  points >= 301 ? "🔥🟠" :
-  points >= 161 ? "🔥🟣" :
-  points >= 101 ? "🔥🔵" :
-  "🔥⚪";
+    const embeds = [];
 
-return `${medal} **${player.name}** — ${flame} ${points} pts`;
-      })
-      .join("\n");
+    if (smgLeaderboard.length > 0) {
+      embeds.push({
+        title: "⚡ SMG Leaderboard",
+        description: formatLeaderboard(smgLeaderboard),
+        color: 0x22c55e,
+      });
+    }
+
+    if (arLeaderboard.length > 0) {
+      embeds.push({
+        title: "🎯 AR Leaderboard",
+        description: formatLeaderboard(arLeaderboard),
+        color: 0xa855f7,
+      });
+    }
+
+    if (noPreferencePlayers.length > 0) {
+      const noPreferenceDescription =
+        noPreferencePlayers
+          .map((player) => {
+            const cr = Number(player.cr || 0);
+            return `• **${player.name}** — ${cr} CR`;
+          })
+          .join("\n");
+
+      embeds.push({
+        title: "❔ No Preferred Weapon Selected",
+        description: noPreferenceDescription,
+        color: 0xfacc15,
+      });
+    }
+
+    if (embeds.length > 0) {
+      embeds[0] = {
+        ...embeds[0],
+        author: {
+          name: title,
+        },
+        thumbnail: {
+          url: "https://shadowborn-za-local.vercel.app/shadowborn-za-logo.jpg",
+        },
+      };
+    }
+
+    const lastEmbedIndex = embeds.length - 1;
+
+    embeds[lastEmbedIndex] = {
+      ...embeds[lastEmbedIndex],
+      footer: {
+        text: "Shadowborn ZA • Competitive Rating",
+      },
+      timestamp: new Date().toISOString(),
+    };
 
     const payload = {
-  username: "Shadowborn ZA",
-  embeds: [
-    {
-      title: "🏆 Shadowborn ZA Leaderboard",
-      description: description,
-      color: 0x7c3aed, // purple theme
-      thumbnail: {
-        url: "https://shadowborn-za-local.vercel.app/shadowborn-za-logo.jpg"
-      },
-      footer: {
-        text: "Shadowborn ZA • Competitive Ranking"
-      },
-      timestamp: new Date().toISOString()
-    }
-  ]
-};
-      
-        
-          
-          
-        
-          
-        
-      
-    
+      username: "Shadowborn ZA",
+      embeds,
+    };
 
     const discordResponse = await fetch(webhookUrl, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     if (!discordResponse.ok) {
       const text = await discordResponse.text();
-      return res.status(500).json({ error: text });
+
+      return res.status(500).json({
+        error: text,
+      });
     }
 
-    return res.status(200).json({ success: true });
-
+    return res.status(200).json({
+      success: true,
+    });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({
+      error: error.message,
+    });
   }
 }
