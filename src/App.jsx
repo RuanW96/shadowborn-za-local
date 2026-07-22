@@ -1064,22 +1064,42 @@ function archiveSeasonAndReset() {
   );
 
   if (!seasonName) return;
+if (
+  !window.confirm(
+    "Archive the Top 2 SMG and Top 2 AR players and start a new Competitive Season?"
+  )
+)
+  return;
+  
 
-  if (!window.confirm("Archive current Top 4 and reset leaderboard stats?")) return;
+  const smgTop2 = smgPlayers.slice(0, 2).map((p, index) => ({
+  position: index + 1,
+  weaponType: "SMG",
+  playerId: p.id,
+  playerName: p.name,
+  points: getCompetitiveScore(p),
+  rank: getRank(getCompetitiveScore(p)).name,
+  tournamentWins: p.tournamentWins,
+  wins: p.wins,
+  losses: p.losses,
+}));
 
-  const top4 = [...players]
-    .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name))
-    .slice(0, 4)
-    .map((p, index) => ({
-      position: index + 1,
-      playerId: p.id,
-      playerName: p.name,
-      points: p.points,
-      rank: getRank(p.points).name,
-      tournamentWins: p.tournamentWins,
-      wins: p.wins,
-      losses: p.losses,
-    }));
+const arTop2 = arPlayers.slice(0, 2).map((p, index) => ({
+  position: index + 1,
+  weaponType: "AR",
+  playerId: p.id,
+  playerName: p.name,
+  points: getCompetitiveScore(p),
+  rank: getRank(getCompetitiveScore(p)).name,
+  tournamentWins: p.tournamentWins,
+  wins: p.wins,
+  losses: p.losses,
+}));
+
+const top4 = [
+  ...smgTop2,
+  ...arTop2,
+];
 
   updateState((prev) => ({
     ...prev,
@@ -1093,17 +1113,35 @@ function archiveSeasonAndReset() {
       ...(prev.seasonHistory || []),
     ],
     players: prev.players.map((p) => ({
-      ...p,
-      points: 0,
-      wins: 0,
-      losses: 0,
-      mvpPoints: 0,
-      activityPoints: 0,
-      tournamentWins: 0,
-    })),
+  ...p,
+
+  // Leaderboard
+  points: 0,
+  wins: 0,
+  losses: 0,
+  mvpPoints: 0,
+  activityPoints: 0,
+  tournamentWins: 0,
+
+  // CR System
+  weeklyChallenges: 0,
+  trainingAttended: 0,
+  trainingMissed: 0,
+  crAdjustment: 0,
+
+  // Call-outs (if you use these)
+  calloutWins: 0,
+  calloutLosses: 0,
+})),
   }));
 
-  alert("Season archived and leaderboard stats reset.");
+  alert(
+  "🏆 Season archived successfully!\n\n" +
+  "Archived:\n" +
+  "• Top 2 SMG Champions\n" +
+  "• Top 2 AR Champions\n\n" +
+  "All Competitive Rating (CR) stats have been reset for the new season."
+);
 }
 function resetPlayerStats(playerId) {
   if (!canAdmin) return;
@@ -4703,12 +4741,39 @@ const pendingCallout = state.callouts?.find(
         <div style={{ color: "#c4b5fd", marginBottom: 10 }}>
           Ended: {season.endedAt}
         </div>
+        {(() => {
+  const smg = season.top4.filter((p) => p.weaponType === "SMG");
+  const ar = season.top4.filter((p) => p.weaponType === "AR");
 
-        {season.top4.map((p) => (
-          <div key={`${season.id}-${p.playerId}`}>
-            #{p.position} {p.playerName} — {p.points} pts — {p.rank}
+  return (
+    <>
+      <div style={{ marginBottom: 12 }}>
+        <h4 style={{ color: "#38bdf8", marginBottom: 6 }}>
+          ⚡ SMG Champions
+        </h4>
+
+        {smg.map((p, index) => (
+          <div key={`${season.id}-smg-${p.playerId}`}>
+            {index === 0 ? "🥇" : "🥈"} {p.playerName} — {p.points} CR — {p.rank}
           </div>
         ))}
+      </div>
+
+      <div>
+        <h4 style={{ color: "#facc15", marginBottom: 6 }}>
+          🎯 AR Champions
+        </h4>
+
+        {ar.map((p, index) => (
+          <div key={`${season.id}-ar-${p.playerId}`}>
+            {index === 0 ? "🥇" : "🥈"} {p.playerName} — {p.points} CR — {p.rank}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+})()}
+
       </div>
     ))}
   </div>
