@@ -450,7 +450,7 @@ const [weeklyAwardDraft, setWeeklyAwardDraft] = useState({
   amount: 10,
   reason: "",
 });
-  const players = (state.players || []).map((p) => ({
+ const players = (state.players || []).map((p) => ({
   codRank: "",
   teamRole: "challenger",
   playStyle: "",
@@ -458,7 +458,67 @@ const [weeklyAwardDraft, setWeeklyAwardDraft] = useState({
   crAdjustment: 0,
   trainingAttended: 0,
   trainingMissed: 0,
+
+  // Division system
+  division: 0,
+  isDivisionCaptain: false,
+
+  // Collectible player-card image
+  cardPhoto: "",
+
+  // Permanent career statistics
+  legacyStats: {
+    seasonsPlayed: 0,
+
+    division1Seasons: 0,
+    division2Seasons: 0,
+    division3Seasons: 0,
+
+    captainSeasons: 0,
+    allStarSelections: 0,
+
+    smgChampionFinishes: 0,
+    arChampionFinishes: 0,
+
+    careerWins: 0,
+    careerLosses: 0,
+    careerMvpPoints: 0,
+    careerTournamentWins: 0,
+
+    highestCr: 0,
+    highestSeasonWins: 0,
+
+    seasonHistory: [],
+  },
+
   ...p,
+
+  // Preserve older legacy values while adding any new fields
+  legacyStats: {
+    seasonsPlayed: 0,
+
+    division1Seasons: 0,
+    division2Seasons: 0,
+    division3Seasons: 0,
+
+    captainSeasons: 0,
+    allStarSelections: 0,
+
+    smgChampionFinishes: 0,
+    arChampionFinishes: 0,
+
+    careerWins: 0,
+    careerLosses: 0,
+    careerMvpPoints: 0,
+    careerTournamentWins: 0,
+
+    highestCr: 0,
+    highestSeasonWins: 0,
+
+    seasonHistory: [],
+
+    ...(p.legacyStats || {}),
+  },
 }));
   const tournament = state.tournament || emptyTournament;
 
@@ -511,7 +571,32 @@ const noPreferencePlayers = competitivePlayers.filter(
   const promotionTeam = players.filter(
   (p) => p.teamRole === "promotion"
 );
+const division1Players = players
+  .filter((p) => Number(p.division || 0) === 1)
+  .sort(
+    (a, b) =>
+      Number(b.isDivisionCaptain || false) -
+        Number(a.isDivisionCaptain || false) ||
+      getCompetitiveScore(b) - getCompetitiveScore(a)
+  );
 
+const division2Players = players
+  .filter((p) => Number(p.division || 0) === 2)
+  .sort(
+    (a, b) =>
+      Number(b.isDivisionCaptain || false) -
+        Number(a.isDivisionCaptain || false) ||
+      getCompetitiveScore(b) - getCompetitiveScore(a)
+  );
+
+const division3Players = players
+  .filter((p) => Number(p.division || 0) === 3)
+  .sort(
+    (a, b) =>
+      Number(b.isDivisionCaptain || false) -
+        Number(a.isDivisionCaptain || false) ||
+      getCompetitiveScore(b) - getCompetitiveScore(a)
+  );
 const challengers = players.filter(
   (p) => !["ateam", "promotion"].includes(p.teamRole)
 );
@@ -673,7 +758,94 @@ function awardWeeklyChallenge() {
 
     updatePlayer(playerId, "teamRole", teamRole);
   }
+function setPlayerDivision(playerId, divisionValue) {
+  if (!canAdmin) return;
 
+  const division = Number(divisionValue);
+  const player = players.find((p) => Number(p.id) === Number(playerId));
+
+  if (!player) return;
+
+  if (![0, 1, 2, 3].includes(division)) {
+    alert("Please select a valid division.");
+    return;
+  }
+
+  if (division > 0) {
+    const playersAlreadyInDivision = players.filter(
+      (p) =>
+        Number(p.division || 0) === division &&
+        Number(p.id) !== Number(playerId)
+    );
+
+    if (playersAlreadyInDivision.length >= 4) {
+      alert(`Division ${division} already has 4 players.`);
+      return;
+    }
+  }
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) =>
+      Number(p.id) === Number(playerId)
+        ? {
+            ...p,
+            division,
+            // Remove captain status when changing division
+            isDivisionCaptain:
+              Number(p.division || 0) === division
+                ? Boolean(p.isDivisionCaptain)
+                : false,
+          }
+        : p
+    ),
+  }));
+}
+
+function setDivisionCaptain(playerId) {
+  if (!canAdmin) return;
+
+  const selectedPlayer = players.find(
+    (p) => Number(p.id) === Number(playerId)
+  );
+
+  if (!selectedPlayer) return;
+
+  const division = Number(selectedPlayer.division || 0);
+
+  if (![1, 2, 3].includes(division)) {
+    alert("Assign this player to a division before making them captain.");
+    return;
+  }
+
+  const alreadyCaptain = Boolean(selectedPlayer.isDivisionCaptain);
+
+  updateState((prev) => ({
+    ...prev,
+    players: prev.players.map((p) => {
+      const playerDivision = Number(p.division || 0);
+
+      // Clicking the current captain again removes captain status
+      if (Number(p.id) === Number(playerId) && alreadyCaptain) {
+        return {
+          ...p,
+          isDivisionCaptain: false,
+        };
+      }
+
+      // Only one captain is allowed in each division
+      if (playerDivision === division) {
+        return {
+          ...p,
+          isDivisionCaptain:
+            Number(p.id) === Number(playerId),
+        };
+      }
+
+      return p;
+    }),
+  }));
+}
   function updateTraining(playerId, type, amount) {
     if (!canAdmin) return;
 
@@ -938,6 +1110,70 @@ useEffect(() => {
 
   alert("Banner uploaded successfully");
 }
+async function uploadCardPhoto(playerId, file) {
+  if (!file) return;
+
+  const player = players.find((p) => Number(p.id) === Number(playerId));
+
+  if (!player) {
+    alert("Player could not be found.");
+    return;
+  }
+
+  const canChangeCardPhoto =
+    canAdmin ||
+    Number(loggedInPlayer?.id) === Number(playerId);
+
+  if (!canChangeCardPhoto) {
+    alert("You can only change your own player-card photo.");
+    return;
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please select a JPG, PNG or WEBP image.");
+    return;
+  }
+
+  const maximumFileSize = 8 * 1024 * 1024;
+
+  if (file.size > maximumFileSize) {
+    alert("The image is too large. Please use an image smaller than 8 MB.");
+    return;
+  }
+
+  const extension =
+    file.name.split(".").pop()?.toLowerCase() || "jpg";
+
+  const fileName =
+    `card-photo-${playerId}-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage
+    .from("avatars")
+    .upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+
+  if (error) {
+    console.error("Card photo upload error:", error);
+    alert("Card photo upload failed: " + error.message);
+    return;
+  }
+
+  const { data } = supabase.storage
+    .from("avatars")
+    .getPublicUrl(fileName);
+
+  updatePlayer(playerId, "cardPhoto", data.publicUrl);
+
+  alert("Player-card photo uploaded successfully.");
+}
 function chooseAvatar(playerId) {
   const input = document.createElement("input");
   input.type = "file";
@@ -963,7 +1199,40 @@ function chooseBanner(playerId) {
 
   input.click();
 }
+function chooseCardPhoto(playerId) {
+  const player = players.find(
+    (p) => Number(p.id) === Number(playerId)
+  );
 
+  if (!player) {
+    alert("Player could not be found.");
+    return;
+  }
+
+  const canChangeCardPhoto =
+    canAdmin ||
+    Number(loggedInPlayer?.id) === Number(playerId);
+
+  if (!canChangeCardPhoto) {
+    alert("You can only change your own player-card photo.");
+    return;
+  }
+
+  const input = document.createElement("input");
+
+  input.type = "file";
+  input.accept = "image/jpeg,image/png,image/webp";
+
+  input.onchange = async () => {
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    await uploadCardPhoto(playerId, file);
+  };
+
+  input.click();
+}
 async function uploadRankProof(file) {
   if (!file || !loggedInPlayer) return;
 
@@ -1026,13 +1295,45 @@ function chooseRankProof() {
           mvpPoints: 0,
           activityPoints: 0,
           avatar: "",
-          role: newPlayer.role,
-          teamRole: "challenger",
-          competitiveRating: 0,
-          playStyle: "",
-          trainingAttended: 0,
-          trainingMissed: 0,
-          codRank: "",
+banner: "",
+cardPhoto: "",
+
+role: newPlayer.role,
+teamRole: "challenger",
+
+division: 0,
+isDivisionCaptain: false,
+
+competitiveRating: 0,
+playStyle: "",
+
+trainingAttended: 0,
+trainingMissed: 0,
+codRank: "",
+
+legacyStats: {
+  seasonsPlayed: 0,
+
+  division1Seasons: 0,
+  division2Seasons: 0,
+  division3Seasons: 0,
+
+  captainSeasons: 0,
+  allStarSelections: 0,
+
+  smgChampionFinishes: 0,
+  arChampionFinishes: 0,
+
+  careerWins: 0,
+  careerLosses: 0,
+  careerMvpPoints: 0,
+  careerTournamentWins: 0,
+
+  highestCr: 0,
+  highestSeasonWins: 0,
+
+  seasonHistory: [],
+},
         },
       ],
     }));
@@ -1168,7 +1469,23 @@ function clearPlayerAvatar(playerId) {
   if (!canAdmin) return;
   updatePlayer(playerId, "avatar", "");
 }
+function clearPlayerCardPhoto(playerId) {
+  const canChangeCardPhoto =
+    canAdmin ||
+    Number(loggedInPlayer?.id) === Number(playerId);
 
+  if (!canChangeCardPhoto) return;
+
+  if (
+    !window.confirm(
+      "Remove this player-card photo?"
+    )
+  ) {
+    return;
+  }
+
+  updatePlayer(playerId, "cardPhoto", "");
+}
 function clearPlayerBanner(playerId) {
   if (!canAdmin) return;
   updatePlayer(playerId, "banner", "");
@@ -2561,6 +2878,39 @@ function resetAllCR() {
 </div>
               <span style={badgeStyle(rank.glow, rank.color)}>{rank.name}</span>
               <span style={badgeStyle()}>{player.role}</span>
+              {Number(player.division || 0) > 0 ? (
+  <span
+    style={badgeStyle(
+      Number(player.division) === 1
+        ? "rgba(250,204,21,0.18)"
+        : Number(player.division) === 2
+        ? "rgba(148,163,184,0.18)"
+        : "rgba(180,83,9,0.18)",
+      Number(player.division) === 1
+        ? "#fde047"
+        : Number(player.division) === 2
+        ? "#cbd5e1"
+        : "#fdba74"
+    )}
+  >
+    Division {player.division}
+  </span>
+) : (
+  <span style={badgeStyle()}>
+    Unassigned
+  </span>
+)}
+
+{player.isDivisionCaptain ? (
+  <span
+    style={badgeStyle(
+      "rgba(250,204,21,0.2)",
+      "#fde047"
+    )}
+  >
+    👑 Division Captain
+  </span>
+) : null}
             </div>
 
             <div style={{ color: "#d6caef", fontSize: 13, marginTop: 4 }}>
@@ -2576,7 +2926,10 @@ function resetAllCR() {
   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
     <button
       type="button"
-      onClick={() => chooseAvatar(player.id)}
+      onClick={(e) => {
+  e.stopPropagation();
+  chooseAvatar(player.id);
+}}
       style={{
         ...buttonStyle(false, false),
         display: "inline-flex",
@@ -2591,7 +2944,10 @@ function resetAllCR() {
 
     <button
       type="button"
-      onClick={() => chooseBanner(player.id)}
+      onClick={(e) => {
+  e.stopPropagation();
+  chooseBanner(player.id);
+}}
       style={{
         ...buttonStyle(false, false),
         display: "inline-flex",
@@ -2603,11 +2959,97 @@ function resetAllCR() {
       <Upload size={14} />
       Upload Banner
     </button>
+    <button
+  type="button"
+  onClick={(e) => {
+    e.stopPropagation();
+    chooseCardPhoto(player.id);
+  }}
+  style={{
+    ...buttonStyle(false, false),
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 13,
+  }}
+>
+  <Upload size={14} />
+  Upload Card Photo
+</button>
   </div>
 ) : null}
 
 {canAdmin ? (
   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+  <div
+  onClick={(e) => e.stopPropagation()}
+  style={{
+    width: "100%",
+    padding: 12,
+    borderRadius: 14,
+    background: "rgba(0,0,0,0.22)",
+    border: "1px solid rgba(168,85,247,0.22)",
+  }}
+>
+  <div
+    style={{
+      fontWeight: 900,
+      marginBottom: 8,
+    }}
+  >
+    Division Management
+  </div>
+
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: isMobile
+        ? "1fr"
+        : "minmax(160px, 1fr) auto",
+      gap: 8,
+    }}
+  >
+    <select
+      value={Number(player.division || 0)}
+      onChange={(e) =>
+        setPlayerDivision(player.id, e.target.value)
+      }
+      style={inputStyle(false)}
+    >
+      <option value={0}>Not Assigned</option>
+      <option value={1}>Division 1</option>
+      <option value={2}>Division 2</option>
+      <option value={3}>Division 3</option>
+    </select>
+
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setDivisionCaptain(player.id);
+      }}
+      disabled={Number(player.division || 0) === 0}
+      style={buttonStyle(
+        Boolean(player.isDivisionCaptain),
+        Number(player.division || 0) === 0
+      )}
+    >
+      {player.isDivisionCaptain
+        ? "Remove Captain"
+        : "Make Captain"}
+    </button>
+  </div>
+
+  <div
+    style={{
+      marginTop: 8,
+      color: "#b9accf",
+      fontSize: 12,
+    }}
+  >
+    Captains manage their division but receive no application admin access.
+  </div>
+</div>
     <button
       type="button"
       onClick={() => {
@@ -2648,6 +3090,18 @@ function resetAllCR() {
     <button type="button" onClick={() => clearPlayerBanner(player.id)} style={buttonStyle(false, false)}>
       Remove Banner
     </button>
+    {player.cardPhoto ? (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      clearPlayerCardPhoto(player.id);
+    }}
+    style={buttonStyle(false, false)}
+  >
+    Remove Card Photo
+  </button>
+) : null}
 <button
   type="button"
   onClick={() => {
@@ -2690,6 +3144,235 @@ function resetAllCR() {
       </div>
     );
   }
+  function divisionCardStatStyle() {
+  return {
+    padding: "9px 10px",
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.055)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 3,
+    minWidth: 0,
+    overflow: "hidden",
+  };
+}
+
+function divisionCardLabelStyle() {
+  return {
+    color: "#a99cbe",
+    fontSize: 9,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    lineHeight: 1.25,
+    wordBreak: "break-word",
+  };
+}
+  function DivisionPlayerCard({ player }) {
+  const division = Number(player.division || 0);
+  const competitiveScore = getCompetitiveScore(player);
+
+  const divisionTheme =
+    division === 1
+      ? {
+          border: "#facc15",
+          glow: "rgba(250,204,21,0.35)",
+          label: "DIVISION 1",
+          accent: "#fde047",
+        }
+      : division === 2
+      ? {
+          border: "#cbd5e1",
+          glow: "rgba(203,213,225,0.28)",
+          label: "DIVISION 2",
+          accent: "#e2e8f0",
+        }
+      : {
+          border: "#fb923c",
+          glow: "rgba(251,146,60,0.3)",
+          label: "DIVISION 3",
+          accent: "#fdba74",
+        };
+
+  const totalMatches =
+    Number(player.wins || 0) + Number(player.losses || 0);
+
+  const winPercentage =
+    totalMatches > 0
+      ? Math.round((Number(player.wins || 0) / totalMatches) * 100)
+      : 0;
+
+  return (
+    <div
+      onClick={() => setSelectedProfilePlayerId(player.id)}
+      style={{
+        position: "relative",
+        minHeight: 390,
+        borderRadius: 22,
+        overflow: "hidden",
+        cursor: "pointer",
+        border: player.isDivisionCaptain
+          ? `2px solid ${divisionTheme.border}`
+          : `1px solid ${divisionTheme.border}`,
+        boxShadow: player.isDivisionCaptain
+          ? `0 0 22px ${divisionTheme.glow}, 0 18px 40px rgba(0,0,0,0.35)`
+          : `0 12px 30px rgba(0,0,0,0.3)`,
+        background: "#100b19",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          height: 230,
+          backgroundImage: player.cardPhoto
+            ? `linear-gradient(to bottom, rgba(5,3,10,0.05), rgba(5,3,10,0.95)), url(${player.cardPhoto})`
+            : player.banner
+            ? `linear-gradient(to bottom, rgba(5,3,10,0.2), rgba(5,3,10,0.95)), url(${player.banner})`
+            : `linear-gradient(145deg, ${divisionTheme.glow}, #100b19)`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            padding: "6px 10px",
+            borderRadius: 999,
+            background: "rgba(7,5,12,0.78)",
+            border: `1px solid ${divisionTheme.border}`,
+            color: divisionTheme.accent,
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: 1,
+          }}
+        >
+          {divisionTheme.label}
+        </div>
+
+        {player.isDivisionCaptain ? (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: "rgba(250,204,21,0.18)",
+              border: "1px solid rgba(250,204,21,0.65)",
+              color: "#fde047",
+              fontSize: 11,
+              fontWeight: 900,
+            }}
+          >
+            👑 TEAM CAPTAIN
+          </div>
+        ) : null}
+
+        {!player.cardPhoto && !player.banner ? (
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 54,
+              fontWeight: 900,
+              color: divisionTheme.accent,
+            }}
+          >
+            {player.emblem}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          padding: 16,
+          marginTop: -34,
+          position: "relative",
+          zIndex: 2,
+        }}
+      >
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 18,
+            background: "rgba(14,9,24,0.94)",
+            border: `1px solid ${divisionTheme.border}`,
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 950,
+              color: "white",
+            }}
+          >
+            {player.name}
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              color: divisionTheme.accent,
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
+            {player.playStyle || "Role not selected"}
+            {player.isDivisionCaptain ? " • Captain" : ""}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+              marginTop: 14,
+            }}
+          >
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>CR</span>
+              <strong>{competitiveScore}</strong>
+            </div>
+
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>COD Rank</span>
+              <strong>{player.codRank || "Unranked"}</strong>
+            </div>
+
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>Record</span>
+              <strong>
+                {player.wins || 0}-{player.losses || 0}
+              </strong>
+            </div>
+
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>Win Rate</span>
+              <strong>{winPercentage}%</strong>
+            </div>
+
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>Tournaments</span>
+              <strong>{player.tournamentWins || 0}</strong>
+            </div>
+
+            <div style={divisionCardStatStyle()}>
+              <span style={divisionCardLabelStyle()}>All-Star Selections</span>
+              <strong>
+                {player.legacyStats?.allStarSelections || 0}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
   function MatchCard({ match }) {
     const teamA = findTeam(match.teamAId);
     const teamB = findTeam(match.teamBId);
@@ -4050,50 +4733,139 @@ const pendingCallout = state.callouts?.find(
   </div>
 </div>
     </div>
+ <div style={{ ...cardStyle(), marginBottom: 18 }}>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+      marginBottom: 16,
+    }}
+  >
+    <div>
+      <h2 style={{ margin: 0 }}>
+        🛡 Shadowborn Competitive Divisions
+      </h2>
 
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr", gap: 16 }}>
-      <div style={cardStyle()}>
-        <h2 style={{ marginTop: 0 }}>👑 Official A-Team</h2>
-        <div style={{ color: "#d6caef", marginBottom: 14 }}>
-          The current 4-player roster representing Shadowborn ZA in competitive matches.
+      <div
+        style={{
+          color: "#cfc4e8",
+          marginTop: 5,
+        }}
+      >
+        Official competitive rosters for the current season.
+      </div>
+    </div>
+  </div>
+
+  {[
+    {
+      number: 1,
+      players: division1Players,
+      title: "Division 1",
+      subtitle: "Shadowborn ZA elite competitive roster",
+      color: "#facc15",
+    },
+    {
+      number: 2,
+      players: division2Players,
+      title: "Division 2",
+      subtitle: "Promotion and development roster",
+      color: "#cbd5e1",
+    },
+    {
+      number: 3,
+      players: division3Players,
+      title: "Division 3",
+      subtitle: "Challenger and rising talent roster",
+      color: "#fb923c",
+    },
+  ].map((division) => (
+    <div
+      key={division.number}
+      style={{
+        marginTop: division.number === 1 ? 0 : 24,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 950,
+              color: division.color,
+            }}
+          >
+            {division.title}
+          </div>
+
+          <div
+            style={{
+              color: "#b9accf",
+              fontSize: 13,
+              marginTop: 3,
+            }}
+          >
+            {division.subtitle}
+          </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-          {aTeamPlayers.map((player, index) => (
-            <div
-              key={player.id}
-              style={{
-                padding: 14,
-                borderRadius: 18,
-                background: index === 0
-                  ? "linear-gradient(135deg, rgba(250,204,21,0.18), rgba(124,58,237,0.12))"
-                  : "rgba(255,255,255,0.05)",
-                border: index === 0
-                  ? "1px solid rgba(250,204,21,0.45)"
-                  : "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <img
-                  src={player.avatar || DEFAULT_LOGO}
-                  alt={player.name}
-                  style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid rgba(250,204,21,0.45)" }}
-                />
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 18 }}>#{index + 1} {player.name}</div>
-                  <div style={{ color: "#fde68a", fontWeight: 800 }}>A-Team Pro</div>
-                </div>
-              </div>
+        <span
+          style={badgeStyle(
+            `${division.color}22`,
+            division.color
+          )}
+        >
+          {division.players.length}/4 Players
+        </span>
+      </div>
 
-              <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-                <div style={badgeStyle()}>CR {getCompetitiveScore(player)}</div>
-                <div style={badgeStyle("rgba(250,204,21,0.13)", "#facc15")}>🏆 Weekly {player.weeklyChallenges || 0}</div>
-                <div style={badgeStyle()}>W {player.wins} / L {player.losses}</div>
-                <div style={badgeStyle("rgba(34,197,94,0.13)", "#86efac")}>Training {player.trainingAttended || 0}</div>
-              </div>
-            </div>
+      {division.players.length === 0 ? (
+        <div
+          style={{
+            padding: 18,
+            borderRadius: 16,
+            border: "1px dashed rgba(255,255,255,0.14)",
+            color: "#9d90b7",
+            textAlign: "center",
+          }}
+        >
+          No players assigned to {division.title}.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+  ? "1fr"
+  : "repeat(4, minmax(0, 1fr))",
+          }}
+        >
+          {division.players.map((player) => (
+            <DivisionPlayerCard
+              key={player.id}
+              player={player}
+            />
           ))}
         </div>
+      )}
+    </div>
+  ))}
+</div>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr", gap: 16 }}>
+     
+        
         <div style={{ display: "grid", gap: 16 }}>
   <div style={cardStyle()}>
     <h2 style={{ marginTop: 0 }}>🏅 Competitive Rankings</h2>
@@ -4193,7 +4965,6 @@ const pendingCallout = state.callouts?.find(
           ))}
         </div>
       </div>
-    </div>
   </>
 )}
         {tab === "competition" && (
