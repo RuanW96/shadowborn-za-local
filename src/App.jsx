@@ -3199,7 +3199,9 @@ function divisionCardLabelStyle() {
 
   const winPercentage =
     totalMatches > 0
-      ? Math.round((Number(player.wins || 0) / totalMatches) * 100)
+      ? Math.round(
+          (Number(player.wins || 0) / totalMatches) * 100
+        )
       : 0;
 
   return (
@@ -3207,108 +3209,175 @@ function divisionCardLabelStyle() {
       onClick={() => setSelectedProfilePlayerId(player.id)}
       style={{
         position: "relative",
-        minHeight: 390,
+        minWidth: 0,
         borderRadius: 22,
         overflow: "hidden",
         cursor: "pointer",
+        background: "#0c0814",
+
         border: player.isDivisionCaptain
           ? `2px solid ${divisionTheme.border}`
           : `1px solid ${divisionTheme.border}`,
+
         boxShadow: player.isDivisionCaptain
-          ? `0 0 22px ${divisionTheme.glow}, 0 18px 40px rgba(0,0,0,0.35)`
-          : `0 12px 30px rgba(0,0,0,0.3)`,
-        background: "#100b19",
+          ? `0 0 24px ${divisionTheme.glow}, 0 18px 40px rgba(0,0,0,0.38)`
+          : "0 14px 34px rgba(0,0,0,0.34)",
+
+        transition:
+          "transform 180ms ease, box-shadow 180ms ease",
       }}
     >
+      {/* PLAYER ARTWORK */}
       <div
         style={{
           position: "relative",
-          height: 230,
-          backgroundImage: player.cardPhoto
-            ? `linear-gradient(to bottom, rgba(5,3,10,0.05), rgba(5,3,10,0.95)), url(${player.cardPhoto})`
-            : player.banner
-            ? `linear-gradient(to bottom, rgba(5,3,10,0.2), rgba(5,3,10,0.95)), url(${player.banner})`
-            : `linear-gradient(145deg, ${divisionTheme.glow}, #100b19)`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
+          height: isMobile ? 390 : 360,
+          overflow: "hidden",
+          background: "#100b19",
         }}
       >
+        {/* Actual uploaded image */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+
+            backgroundImage: player.cardPhoto
+              ? `url(${player.cardPhoto})`
+              : player.banner
+              ? `url(${player.banner})`
+              : "none",
+
+            backgroundSize: "90%",
+
+            // Change this per player later if required
+            backgroundPosition: player.cardPhoto
+              ? "50% 18%"
+              : "center",
+
+            backgroundRepeat: "no-repeat",
+
+            transform: "scale(1.02)",
+          }}
+        />
+
+        {/* Fallback when there is no photo */}
+        {!player.cardPhoto && !player.banner ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+
+              background: `radial-gradient(
+                circle at center,
+                ${divisionTheme.glow},
+                #100b19 70%
+              )`,
+
+              color: divisionTheme.accent,
+              fontSize: 62,
+              fontWeight: 950,
+            }}
+          >
+            {player.emblem}
+          </div>
+        ) : null}
+
+        {/* Purple lighting overlay */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(135deg, rgba(124,58,237,0.12), transparent 48%)",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Bottom fade into card */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(to bottom, rgba(7,4,12,0.02) 35%, rgba(7,4,12,0.36) 64%, #0c0814 100%)",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Division label */}
         <div
           style={{
             position: "absolute",
             top: 12,
             left: 12,
-            padding: "6px 10px",
+            zIndex: 3,
+
+            padding: "6px 11px",
             borderRadius: 999,
-            background: "rgba(7,5,12,0.78)",
+
+            background: "rgba(7,5,12,0.82)",
             border: `1px solid ${divisionTheme.border}`,
+
             color: divisionTheme.accent,
             fontSize: 11,
-            fontWeight: 900,
-            letterSpacing: 1,
+            fontWeight: 950,
+            letterSpacing: 0.8,
+
+            backdropFilter: "blur(8px)",
           }}
         >
           {divisionTheme.label}
         </div>
 
+        {/* Captain label */}
         {player.isDivisionCaptain ? (
           <div
             style={{
               position: "absolute",
               top: 12,
               right: 12,
-              padding: "6px 10px",
+              zIndex: 3,
+
+              padding: "6px 11px",
               borderRadius: 999,
-              background: "rgba(250,204,21,0.18)",
-              border: "1px solid rgba(250,204,21,0.65)",
+
+              background: "rgba(25,18,5,0.88)",
+              border: "1px solid rgba(250,204,21,0.75)",
+
               color: "#fde047",
               fontSize: 11,
-              fontWeight: 900,
+              fontWeight: 950,
+
+              backdropFilter: "blur(8px)",
             }}
           >
             👑 TEAM CAPTAIN
           </div>
         ) : null}
 
-        {!player.cardPhoto && !player.banner ? (
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 54,
-              fontWeight: 900,
-              color: divisionTheme.accent,
-            }}
-          >
-            {player.emblem}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          padding: 16,
-          marginTop: -34,
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
+        {/* Player name over artwork */}
         <div
           style={{
-            padding: 14,
-            borderRadius: 18,
-            background: "rgba(14,9,24,0.94)",
-            border: `1px solid ${divisionTheme.border}`,
-            backdropFilter: "blur(10px)",
+            position: "absolute",
+            left: 16,
+            right: 16,
+            bottom: 6,
+            zIndex: 4,
           }}
         >
           <div
             style={{
-              fontSize: 20,
-              fontWeight: 950,
               color: "white",
+              fontSize: isMobile ? 27 : 24,
+              fontWeight: 950,
+              lineHeight: 1.05,
+
+              textShadow:
+                "0 3px 12px rgba(0,0,0,0.95), 0 0 20px rgba(0,0,0,0.7)",
             }}
           >
             {player.name}
@@ -3316,53 +3385,109 @@ function divisionCardLabelStyle() {
 
           <div
             style={{
-              marginTop: 4,
+              marginTop: 6,
               color: divisionTheme.accent,
               fontSize: 13,
-              fontWeight: 800,
+              fontWeight: 900,
+              textShadow: "0 2px 8px rgba(0,0,0,0.95)",
             }}
           >
             {player.playStyle || "Role not selected"}
-            {player.isDivisionCaptain ? " • Captain" : ""}
-          </div>
 
+            {player.isDivisionCaptain
+              ? " • Captain"
+              : ""}
+          </div>
+        </div>
+      </div>
+
+      {/* STAT SECTION */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 5,
+          padding: "0 14px 14px",
+          marginTop: -90,
+        }}
+      >
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 17,
+
+            background:
+              "linear-gradient(145deg, rgba(27,21,39,0.98), rgba(14,10,23,0.98))",
+
+            border: `1px solid ${divisionTheme.border}`,
+
+            boxShadow:
+              "0 12px 26px rgba(0,0,0,0.28)",
+          }}
+        >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gridTemplateColumns:
+                "repeat(2, minmax(0, 1fr))",
               gap: 8,
-              marginTop: 14,
             }}
           >
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>CR</span>
+              <span style={divisionCardLabelStyle()}>
+                CR
+              </span>
+
               <strong>{competitiveScore}</strong>
             </div>
 
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>COD Rank</span>
-              <strong>{player.codRank || "Unranked"}</strong>
+              <span style={divisionCardLabelStyle()}>
+                COD Rank
+              </span>
+
+              <strong
+                style={{
+                  whiteSpace: "normal",
+                  lineHeight: 1.2,
+                }}
+              >
+                {player.codRank || "Unranked"}
+              </strong>
             </div>
 
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>Record</span>
+              <span style={divisionCardLabelStyle()}>
+                Record
+              </span>
+
               <strong>
                 {player.wins || 0}-{player.losses || 0}
               </strong>
             </div>
 
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>Win Rate</span>
+              <span style={divisionCardLabelStyle()}>
+                Win Rate
+              </span>
+
               <strong>{winPercentage}%</strong>
             </div>
 
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>Tournaments</span>
-              <strong>{player.tournamentWins || 0}</strong>
+              <span style={divisionCardLabelStyle()}>
+                Tournaments
+              </span>
+
+              <strong>
+                {player.tournamentWins || 0}
+              </strong>
             </div>
 
             <div style={divisionCardStatStyle()}>
-              <span style={divisionCardLabelStyle()}>All-Star Selections</span>
+              <span style={divisionCardLabelStyle()}>
+                All-Star Selections
+              </span>
+
               <strong>
                 {player.legacyStats?.allStarSelections || 0}
               </strong>
@@ -3370,6 +3495,22 @@ function divisionCardLabelStyle() {
           </div>
         </div>
       </div>
+
+      {/* Bottom division glow */}
+      <div
+        style={{
+          position: "absolute",
+          left: "18%",
+          right: "18%",
+          bottom: -3,
+          height: 5,
+
+          background: divisionTheme.border,
+          borderRadius: 999,
+          filter: "blur(5px)",
+          opacity: 0.7,
+        }}
+      />
     </div>
   );
 }
