@@ -968,37 +968,128 @@ useEffect(() => {
       return next;
     });
   }
+  function isPinAlreadyUsed(pinToCheck, excludedPlayerId = null) {
+  const cleanPin = String(pinToCheck || "").trim();
 
-  function loginWithPin() {
-    const chosen = players.find((p) => p.id === Number(selectedLoginPlayerId));
+  if (!cleanPin) return false;
 
-    if (!chosen) {
-      setLoginError("Please select your player name.");
+  return Object.entries(state.playerPins || {}).some(
+    ([playerId, savedPin]) =>
+      String(savedPin || "").trim() === cleanPin &&
+      Number(playerId) !== Number(excludedPlayerId)
+  );
+}
+function auditPlayerPins() {
+  if (!canAdmin) return;
+
+  const pinsByValue = {};
+  const missingPins = [];
+  const invalidPins = [];
+
+  players.forEach((player) => {
+    const savedPin =
+      state.playerPins?.[player.id] ||
+      PLAYER_PINS?.[player.id] ||
+      "";
+
+    const cleanPin = String(savedPin).trim();
+
+    if (!cleanPin) {
+      missingPins.push(player.name);
       return;
     }
 
-    const expectedPin = state.playerPins?.[chosen.id] || PLAYER_PINS[chosen.id];
-
-    if (!expectedPin) {
-      setLoginError("No PIN found for this player.");
-      return;
+    if (!/^\d{4}$/.test(cleanPin)) {
+      invalidPins.push(
+        `${player.name}: ${cleanPin}`
+      );
     }
 
-    if (pin !== expectedPin) {
-      setLoginError("Incorrect PIN.");
-      return;
+    if (!pinsByValue[cleanPin]) {
+      pinsByValue[cleanPin] = [];
     }
 
-    setAuth({
-      playerId: chosen.id,
-      playerName: chosen.name,
-      role: chosen.role,
-    });
+    pinsByValue[cleanPin].push(player.name);
+  });
 
-    setPin("");
-    setLoginError("");
-    setTab("dashboard");
+  const duplicatePins = Object.entries(pinsByValue)
+    .filter(([, playerNames]) => playerNames.length > 1)
+    .map(
+      ([pinValue, playerNames]) =>
+        `PIN ${pinValue}: ${playerNames.join(", ")}`
+    );
+
+  let report = "PLAYER PIN AUDIT\n\n";
+
+  if (duplicatePins.length === 0) {
+    report += "✅ No duplicate PINs found.\n\n";
+  } else {
+    report += "⚠️ DUPLICATE PINS:\n";
+    report += duplicatePins.join("\n");
+    report += "\n\n";
   }
+
+  if (missingPins.length === 0) {
+    report += "✅ Every player has a PIN.\n\n";
+  } else {
+    report += "⚠️ PLAYERS WITHOUT PINS:\n";
+    report += missingPins.join("\n");
+    report += "\n\n";
+  }
+
+  if (invalidPins.length === 0) {
+    report += "✅ All PINs contain exactly 4 numbers.";
+  } else {
+    report += "⚠️ INVALID PINS:\n";
+    report += invalidPins.join("\n");
+  }
+
+  alert(report);
+}
+function loginWithPin() {
+  const cleanPin = String(pin || "").trim();
+
+  if (!/^\d{4}$/.test(cleanPin)) {
+    setLoginError("Enter your 4-digit player PIN.");
+    return;
+  }
+
+  const matchingPinEntry = Object.entries(
+    state.playerPins || {}
+  ).find(
+    ([, savedPin]) =>
+      String(savedPin || "").trim() === cleanPin
+  );
+
+  if (!matchingPinEntry) {
+    setLoginError("Incorrect PIN.");
+    return;
+  }
+
+  const [matchingPlayerId] = matchingPinEntry;
+
+  const chosen = players.find(
+    (player) =>
+      Number(player.id) === Number(matchingPlayerId)
+  );
+
+  if (!chosen) {
+    setLoginError(
+      "No player profile is linked to this PIN."
+    );
+    return;
+  }
+
+  setAuth({
+    playerId: chosen.id,
+    playerName: chosen.name,
+    role: chosen.role,
+  });
+
+  setPin("");
+  setLoginError("");
+  setTab("dashboard");
+}
 
   function logout() {
     setAuth(null);
@@ -1275,14 +1366,36 @@ function chooseRankProof() {
 }
   function addPlayer() {
     if (!canAdmin) return;
+if (!newPlayer.name.trim()) {
+  alert("Please enter the player's name.");
+  return;
+}
 
-    if (!newPlayer.name.trim()) return;
+const cleanPin = String(newPlayer.pin || "").trim();
 
-    const nextId = Math.max(...players.map((p) => p.id), 0) + 1;
+if (!/^\d{4}$/.test(cleanPin)) {
+  alert("The login PIN must contain exactly 4 numbers.");
+  return;
+}
 
+if (isPinAlreadyUsed(cleanPin)) {
+  alert(
+    "That PIN is already assigned to another player. Please choose a different PIN."
+  );
+  return;
+}
+
+const nextId = Math.max(...players.map((p) => p.id), 0) + 1;
     updateState((prev) => ({
-      ...prev,
-      players: [
+  ...prev,
+
+  playerPins: {
+    ...(prev.playerPins || {}),
+    [nextId]: cleanPin,
+  },
+
+  players: [
+    
         ...prev.players,
         {
           id: nextId,
@@ -3103,22 +3216,37 @@ function resetAllCR() {
   </button>
 ) : null}
 <button
-  type="button"
-  onClick={() => {
-    const newPin = prompt(`Enter new PIN for ${player.name}:`);
+onClick={() => {
+  const newPin = prompt(
+    `Enter a new 4-digit PIN for ${player.name}:`
+  );
 
-    if (!newPin) return;
+  if (!newPin) return;
 
-    updateState((prev) => ({
-      ...prev,
-      playerPins: {
-        ...(prev.playerPins || {}),
-        [player.id]: newPin,
-      },
-    }));
+  const cleanPin = String(newPin).trim();
 
-    alert(`PIN updated for ${player.name}`);
-  }}
+  if (!/^\d{4}$/.test(cleanPin)) {
+    alert("The PIN must contain exactly 4 numbers.");
+    return;
+  }
+
+  if (isPinAlreadyUsed(cleanPin, player.id)) {
+    alert(
+      "That PIN is already assigned to another player. Please choose a different PIN."
+    );
+    return;
+  }
+
+  updateState((prev) => ({
+    ...prev,
+    playerPins: {
+      ...(prev.playerPins || {}),
+      [player.id]: cleanPin,
+    },
+  }));
+
+  alert(`PIN updated for ${player.name}`);
+}}
   style={buttonStyle(false, false)}
 >
   Change PIN
@@ -4136,143 +4264,474 @@ function VisualBracketBoardV3() {
   return (
     <div
       style={{
-        ...appBg,
-        display: "grid",
-        placeItems: "center",
-        padding: 20,
+        minHeight: "100vh",
         position: "relative",
         overflow: "hidden",
+        display: "grid",
+        placeItems: "center",
+        padding: isMobile ? 16 : 28,
+        boxSizing: "border-box",
+        color: "white",
+
+        // The stadium image will be added as:
+        // public/sbza-login-stadium.jpg
+        backgroundImage: `
+          linear-gradient(
+            180deg,
+            rgba(3,2,8,0.32) 0%,
+            rgba(7,3,15,0.58) 45%,
+            rgba(5,2,12,0.92) 100%
+          ),
+          radial-gradient(
+            circle at 50% 30%,
+            rgba(168,85,247,0.22),
+            transparent 48%
+          ),
+          url("/sbza-login-stadium.jpg")
+        `,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundColor: "#08040f",
       }}
     >
-      <img
-  src={state.logoUrl || DEFAULT_LOGO}
-  alt="Shadowborn Background"
-  style={{
-    position: "absolute",
-    right: "8%",
-    top: "50%",
-    transform: "translateY(-50%)",
-    width: isMobile ? 260 : 520,
-    opacity: 0.10,
-    filter: "drop-shadow(0 0 80px rgba(168,85,247,0.6))",
-    pointerEvents: "none",
-    zIndex: 0,
-  }}
-/>
+      {/* Top purple stadium glow */}
+      <div
+        style={{
+          position: "absolute",
+          top: -180,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: isMobile ? 520 : 1100,
+          height: 420,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(168,85,247,0.38), transparent 68%)",
+          filter: "blur(30px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Left spotlight */}
+      <div
+        style={{
+          position: "absolute",
+          top: "-10%",
+          left: isMobile ? "-55%" : "-8%",
+          width: isMobile ? 340 : 520,
+          height: "120%",
+          transform: "rotate(-18deg)",
+          background:
+            "linear-gradient(90deg, transparent, rgba(168,85,247,0.12), transparent)",
+          filter: "blur(16px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Right spotlight */}
+      <div
+        style={{
+          position: "absolute",
+          top: "-10%",
+          right: isMobile ? "-55%" : "-8%",
+          width: isMobile ? 340 : 520,
+          height: "120%",
+          transform: "rotate(18deg)",
+          background:
+            "linear-gradient(90deg, transparent, rgba(59,130,246,0.1), transparent)",
+          filter: "blur(16px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Bottom arena fog */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: -80,
+          height: 260,
+          background:
+            "radial-gradient(ellipse at center, rgba(124,58,237,0.23), transparent 68%)",
+          filter: "blur(26px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Main login content */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 5,
+          width: "100%",
+          maxWidth: 1180,
+          display: "grid",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "minmax(0, 1.25fr) minmax(360px, 0.75fr)",
+          gap: isMobile ? 24 : 54,
+          alignItems: "center",
+        }}
+      >
+        {/* Championship introduction */}
         <div
           style={{
-            width: 420,
-            maxWidth: "96vw",
-            ...cardStyle(),
-            textAlign: "center",
-            padding: 28,
-            position: "relative",
-overflow: "hidden",
-background: `
-  linear-gradient(rgba(12,6,24,0.88), rgba(12,6,24,0.94)),
-  url(${state.logoUrl || DEFAULT_LOGO}) center/70% no-repeat
-  backdropFilter: "blur(18px)",
-border: "1px solid rgba(168,85,247,0.25)",
-boxShadow: 0 0 35px rgba(168,85,247,0.25),
-  inset 0 0 30px rgba(168,85,247,0.08)
-`,
-boxShadow: "0 0 40px rgba(168,85,247,0.35)",
-         }}
+            textAlign: isMobile ? "center" : "left",
+            padding: isMobile ? "20px 4px 0" : "30px 10px",
+          }}
         >
           <div
-  style={{
-    width: isMobile ? 110 : 150,
-    height: isMobile ? 110 : 150,
-    borderRadius: 32,
-    padding: 8,
-    background:
-      "linear-gradient(135deg, rgba(168,85,247,0.35), rgba(59,130,246,0.18), rgba(0,0,0,0.4))",
-    border: "1px solid rgba(168,85,247,0.55)",
-    boxShadow:
-      "0 0 28px rgba(168,85,247,0.45), 0 0 60px rgba(59,130,246,0.18)",
-    display: "grid",
-    placeItems: "center",
-  }}
->
-  <img
-    src={state.logoUrl || DEFAULT_LOGO}
-    alt="Shadowborn ZA"
-    style={{
-      width: "100%",
-      height: "100%",
-      objectFit: "cover",
-      borderRadius: 26,
-      filter: "drop-shadow(0 0 18px rgba(168,85,247,0.8))",
-    }}
-  />
-</div>
-          <h1
-  style={{
-    margin: 0,
-    fontSize: isMobile ? 34 : 54,
-    letterSpacing: 1,
-    textShadow: "0 0 18px rgba(168,85,247,0.65)",
-  }}
->
-  {state.clanName}
-</h1>
-          <div style={{ color: "#d6caef", marginTop: 8, marginBottom: 24 }}>
-            {state.tagline}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 12px",
+              borderRadius: 999,
+              background: "rgba(8,5,16,0.72)",
+              border: "1px solid rgba(196,181,253,0.3)",
+              color: "#ddd6fe",
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: 1.5,
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            🏟 SHADOWBORN CHAMPIONSHIP ARENA
           </div>
 
-          <div style={{ display: "grid", gap: 12, textAlign: "left" }}>
-            <div>
-              <div style={{ marginBottom: 6 }}>Player Name</div>
-              <select
-                value={selectedLoginPlayerId}
-                onChange={(e) => setSelectedLoginPlayerId(e.target.value)}
-                style={inputStyle(false)}
-              >
-                <option value="">Select your player name</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div
+            style={{
+              marginTop: 18,
+              fontSize: isMobile ? 42 : 72,
+              lineHeight: 0.92,
+              fontWeight: 950,
+              letterSpacing: isMobile ? 1 : 2,
+              textTransform: "uppercase",
+              textShadow:
+                "0 5px 26px rgba(0,0,0,0.95), 0 0 36px rgba(168,85,247,0.68)",
+            }}
+          >
+            Shadowborn
+            <br />
+            <span
+              style={{
+                color: "#c084fc",
+              }}
+            >
+              ZA
+            </span>
+          </div>
 
-            <div>
-              <div style={{ marginBottom: 6 }}>PIN</div>
-              <input
-                type="password"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="Enter PIN"
-                style={inputStyle(false)}
+          <div
+            style={{
+              marginTop: 16,
+              color: "#f5f3ff",
+              fontSize: isMobile ? 14 : 17,
+              fontWeight: 900,
+              letterSpacing: 3,
+              textTransform: "uppercase",
+              textShadow: "0 3px 12px rgba(0,0,0,0.9)",
+            }}
+          >
+            Competitive Platform
+          </div>
+
+          <div
+            style={{
+              maxWidth: 560,
+              margin: isMobile ? "14px auto 0" : "14px 0 0",
+              color: "#d8cff0",
+              lineHeight: 1.6,
+              fontSize: isMobile ? 13 : 15,
+              textShadow: "0 2px 10px rgba(0,0,0,0.95)",
+            }}
+          >
+            Enter the arena. Represent your division. Build your legacy.
+          </div>
+        </div>
+
+        {/* Login glass panel */}
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 440,
+            justifySelf: "center",
+            boxSizing: "border-box",
+            padding: isMobile ? 22 : 30,
+            borderRadius: 28,
+
+            background:
+              "linear-gradient(145deg, rgba(18,11,31,0.9), rgba(7,4,14,0.94))",
+
+            border: "1px solid rgba(192,132,252,0.36)",
+
+            boxShadow:
+              "0 28px 80px rgba(0,0,0,0.62), 0 0 42px rgba(168,85,247,0.18), inset 0 1px 0 rgba(255,255,255,0.06)",
+
+            backdropFilter: "blur(20px)",
+          }}
+        >
+          {/* Logo */}
+          <div
+            style={{
+              display: "grid",
+              placeItems: "center",
+              marginBottom: 18,
+            }}
+          >
+            <div
+              style={{
+                width: isMobile ? 84 : 100,
+                height: isMobile ? 84 : 100,
+                padding: 6,
+                borderRadius: 24,
+                background:
+                  "linear-gradient(135deg, rgba(168,85,247,0.48), rgba(59,130,246,0.2), rgba(0,0,0,0.5))",
+                border: "1px solid rgba(216,180,254,0.48)",
+                boxShadow:
+                  "0 0 30px rgba(168,85,247,0.42), 0 0 70px rgba(124,58,237,0.16)",
+              }}
+            >
+              <img
+                src={state.logoUrl || DEFAULT_LOGO}
+                alt="Shadowborn ZA"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: 19,
+                  objectFit: "cover",
+                }}
               />
             </div>
+          </div>
 
-            {loginError ? (
-              <div style={{ color: "#fca5a5", fontSize: 14 }}>{loginError}</div>
-            ) : null}
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: isMobile ? 24 : 28,
+              fontWeight: 950,
+            }}
+          >
+            Welcome Back
+          </div>
 
-            <button onClick={loginWithPin} style={buttonStyle(true, false)}>
-              <Lock size={14} /> Login
-            </button>
+          <div
+            style={{
+              marginTop: 7,
+              marginBottom: 22,
+              textAlign: "center",
+              color: "#b9accf",
+              fontSize: 13,
+            }}
+          >
+            Enter your unique four-digit player PIN
+          </div>
 
-            <a
-              href={DISCORD_LINK}
-              target="_blank"
-              rel="noreferrer"
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={4}
+            value={pin}
+            onChange={(e) => {
+              const numbersOnly = e.target.value
+                .replace(/\D/g, "")
+                .slice(0, 4);
+
+              setPin(numbersOnly);
+              setLoginError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                loginWithPin();
+              }
+            }}
+            placeholder="••••"
+            aria-label="Player PIN"
+            style={{
+              width: "100%",
+              height: 64,
+              boxSizing: "border-box",
+              borderRadius: 17,
+              border: loginError
+                ? "1px solid rgba(248,113,113,0.7)"
+                : "1px solid rgba(192,132,252,0.42)",
+              outline: "none",
+              background: "rgba(5,3,11,0.7)",
+              color: "white",
+              textAlign: "center",
+              fontSize: 28,
+              fontWeight: 950,
+              letterSpacing: 16,
+              paddingLeft: 18,
+              boxShadow: loginError
+                ? "0 0 18px rgba(239,68,68,0.16)"
+                : "inset 0 0 18px rgba(168,85,247,0.08)",
+            }}
+          />
+
+          {loginError ? (
+            <div
               style={{
-                ...buttonStyle(false, false),
-                textDecoration: "none",
+                marginTop: 10,
+                color: "#fca5a5",
+                fontSize: 13,
+                fontWeight: 700,
                 textAlign: "center",
               }}
             >
-              <MessageCircle size={14} /> Join Shadowborn Discord
-            </a>
+              {loginError}
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={loginWithPin}
+            disabled={pin.length !== 4}
+            style={{
+              width: "100%",
+              marginTop: 14,
+              padding: "14px 16px",
+              borderRadius: 16,
+              border: "1px solid rgba(216,180,254,0.35)",
+              background:
+                pin.length === 4
+                  ? "linear-gradient(135deg, #7c3aed, #a855f7)"
+                  : "rgba(255,255,255,0.06)",
+              color: pin.length === 4 ? "white" : "#81778f",
+              cursor: pin.length === 4 ? "pointer" : "not-allowed",
+              fontSize: 14,
+              fontWeight: 950,
+              letterSpacing: 1.3,
+              boxShadow:
+                pin.length === 4
+                  ? "0 10px 26px rgba(124,58,237,0.34)"
+                  : "none",
+            }}
+          >
+            <Lock size={15} style={{ marginRight: 7 }} />
+            ENTER THE ARENA
+          </button>
+
+          {/* Live platform stats */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 8,
+              marginTop: 18,
+            }}
+          >
+            {[
+              {
+                value: players.length,
+                label: "PLAYERS",
+                color: "#c084fc",
+              },
+              {
+                value: 3,
+                label: "DIVISIONS",
+                color: "#fde047",
+              },
+              {
+                value: "LIVE",
+                label: "PLATFORM",
+                color: "#86efac",
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  minWidth: 0,
+                  padding: "10px 5px",
+                  borderRadius: 13,
+                  background: "rgba(255,255,255,0.045)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    color: item.color,
+                    fontWeight: 950,
+                    fontSize: 15,
+                  }}
+                >
+                  {item.value}
+                </div>
+
+                <div
+                  style={{
+                    color: "#9589a8",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    marginTop: 3,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {item.label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <a
+            href={DISCORD_LINK}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              marginTop: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              padding: "11px 12px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(255,255,255,0.04)",
+              color: "#d8cff0",
+              textDecoration: "none",
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            <MessageCircle size={14} />
+            Join Shadowborn Discord
+          </a>
+
+          <div
+            style={{
+              marginTop: 13,
+              textAlign: "center",
+              color: "#70667f",
+              fontSize: 10,
+            }}
+          >
+            Secure clan access • Never share your PIN
           </div>
         </div>
       </div>
-    );
-  }
+
+      {/* Bottom championship label */}
+      <div
+        style={{
+          position: "absolute",
+          zIndex: 4,
+          bottom: isMobile ? 9 : 14,
+          left: 0,
+          right: 0,
+          textAlign: "center",
+          color: "rgba(226,232,240,0.48)",
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: 2,
+        }}
+      >
+        SHADOWBORN ZA • VICTORY AWAITS IN THE SHADOWS
+      </div>
+    </div>
+  );
+}
 const pendingCallout = state.callouts?.find(
   (c) =>
     c.challengedId === loggedInPlayer?.id &&
@@ -5700,7 +6159,22 @@ const pendingCallout = state.callouts?.find(
 
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Add Clan Member</h2>
-
+{canAdmin ? (
+  <button
+    type="button"
+    onClick={auditPlayerPins}
+    style={{
+      ...buttonStyle(false, false),
+      width: "100%",
+      marginBottom: 16,
+      background: "rgba(250,204,21,0.16)",
+      border: "1px solid rgba(250,204,21,0.45)",
+      color: "#fde047",
+    }}
+  >
+    🔐 Audit All Player PINs
+  </button>
+) : null}
               <div style={{ marginBottom: 8 }}>Name</div>
               <input value={newPlayer.name} onChange={(e) => setNewPlayer({ ...newPlayer, name: e.target.value })} style={{ ...inputStyle(!canAdmin), marginBottom: 12 }} disabled={!canAdmin} />
 
