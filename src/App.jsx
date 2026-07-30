@@ -23,7 +23,7 @@ import {
   Star,
 } from "lucide-react";
 import { supabase } from "./supabase";
-
+import LoginIntro from "./components/LoginIntro";
 const STORAGE_ROW_ID = 1;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
@@ -135,16 +135,22 @@ const defaultState = {
   callouts: [],
   poll: {
     question: "What should we play next?",
-    options: [
+   options: [
   { id: 1, label: "1v1 SND", votes: 0 },
   { id: 2, label: "1v1 Hardpoint", votes: 0 },
   { id: 3, label: "1v1 Overload", votes: 0 },
+
   { id: 4, label: "2v2 SND", votes: 0 },
   { id: 5, label: "2v2 Hardpoint", votes: 0 },
   { id: 6, label: "2v2 Overload", votes: 0 },
-  { id: 7, label: "4v4 SND", votes: 0 },
-  { id: 8, label: "4v4 Hardpoint", votes: 0 },
-  { id: 9, label: "4v4 Overload", votes: 0 },
+
+  { id: 7, label: "3v3 SND", votes: 0 },
+  { id: 8, label: "3v3 Hardpoint", votes: 0 },
+  { id: 9, label: "3v3 Overload", votes: 0 },
+
+  { id: 10, label: "4v4 SND", votes: 0 },
+  { id: 11, label: "4v4 Hardpoint", votes: 0 },
+  { id: 12, label: "4v4 Overload", votes: 0 },
 ],
        
   },
@@ -158,7 +164,10 @@ const defaultState = {
 function getTeamSize(format) {
   if (format === "1v1") return 1;
   if (format === "2v2") return 2;
-  return 4;
+  if (format === "3v3") return 3;
+  if (format === "4v4") return 4;
+
+  return 2;
 }
 
 function getRank(points) {
@@ -394,6 +403,8 @@ export default function App() {
   const [pin, setPin] = useState("");
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginIntroPlayer, setLoginIntroPlayer] = useState(null);
+const [loginIntroVisible, setLoginIntroVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth < 768 : false);
   const [selectedProfilePlayerId, setSelectedProfilePlayerId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
@@ -706,38 +717,99 @@ const sundayLosingPlayers = players.filter((p) =>
   );
 }
 
+function getWeeklyChallengePoints(player) {
+  const history = Array.isArray(player.weeklyChallengeHistory)
+    ? player.weeklyChallengeHistory
+    : [];
+
+  // New system: total the actual reward selected for each challenge.
+  if (history.length > 0) {
+    return history.reduce(
+      (total, challenge) =>
+        total + Number(challenge.amount || 0),
+      0
+    );
+  }
+
+  // Safety fallback for older records that have a challenge count
+  // but no saved challenge history.
+  return Number(player.weeklyChallenges || 0) * 20;
+}
+
 function getCompetitiveScore(player) {
   return (
-  getRawCompetitiveScore(player) +
-  Number(player.crAdjustment || 0) +
-  Number(player.weeklyChallenges || 0) * 20
-);
+    getRawCompetitiveScore(player) +
+    Number(player.crAdjustment || 0) +
+    getWeeklyChallengePoints(player)
+  );
 }
 function awardWeeklyChallenge() {
   if (!canAdmin) return;
 
-  const amount = Number(weeklyAwardDraft.amount || 0);
-  if (!weeklyAwardDraft.playerId || !amount) return;
+  const playerId = Number(weeklyAwardDraft.playerId);
+  const amount = Number(weeklyAwardDraft.amount);
+  const reason = String(
+    weeklyAwardDraft.reason || ""
+  ).trim();
+
+  if (!playerId) {
+    alert("Please select a player.");
+    return;
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    alert("Please enter a valid CR reward greater than 0.");
+    return;
+  }
+
+  if (!reason) {
+    alert("Please enter the challenge name or reason.");
+    return;
+  }
+
+  const selectedPlayer = players.find(
+    (player) => Number(player.id) === playerId
+  );
+
+  if (!selectedPlayer) {
+    alert("The selected player could not be found.");
+    return;
+  }
 
   updateState((prev) => ({
     ...prev,
-    players: prev.players.map((p) =>
-      p.id === weeklyAwardDraft.playerId
+
+    players: prev.players.map((player) =>
+      Number(player.id) === playerId
         ? {
-            ...p,
-            weeklyChallenges: Number(p.weeklyChallenges || 0) + 1,
+            ...player,
+
+            weeklyChallenges:
+              Number(player.weeklyChallenges || 0) + 1,
+
             weeklyChallengeHistory: [
-              ...(p.weeklyChallengeHistory || []),
+              ...(player.weeklyChallengeHistory || []),
               {
+                id: Date.now(),
                 amount,
-                reason: weeklyAwardDraft.reason || "Weekly Challenge",
-                date: new Date().toLocaleDateString(),
+                reason,
+                date: new Date().toLocaleDateString("en-ZA"),
+                createdAt: new Date().toISOString(),
+                awardedBy:
+                  loggedInPlayer?.name || "Admin",
               },
             ],
           }
-        : p
+        : player
     ),
   }));
+
+  alert(
+    `🏆 Weekly challenge awarded!\n\n` +
+      `Player: ${selectedPlayer.name}\n` +
+      `Challenge: ${reason}\n` +
+      `CR Reward: +${amount}`
+  );
 
   setWeeklyAwardDraft({
     playerId: "",
@@ -1080,15 +1152,26 @@ function loginWithPin() {
     return;
   }
 
+  setPin("");
+setLoginError("");
+
+setLoginIntroPlayer(chosen);
+setLoginIntroVisible(true);
+
+setTimeout(() => {
   setAuth({
     playerId: chosen.id,
     playerName: chosen.name,
     role: chosen.role,
   });
 
-  setPin("");
-  setLoginError("");
   setTab("dashboard");
+}, 3600);
+
+setTimeout(() => {
+  setLoginIntroVisible(false);
+  setLoginIntroPlayer(null);
+}, 4200);
 }
 
   function logout() {
@@ -1096,6 +1179,8 @@ function loginWithPin() {
     setPin("");
     setSelectedLoginPlayerId("");
     setLoginError("");
+    setLoginIntroVisible(false);
+setLoginIntroPlayer(null);
     setTab("dashboard");
   }
 
@@ -4294,6 +4379,7 @@ function VisualBracketBoardV3() {
         backgroundColor: "#08040f",
       }}
     >
+      <style>{glowStyles}</style>
       {/* Top purple stadium glow */}
       <div
         style={{
@@ -4587,7 +4673,7 @@ function VisualBracketBoardV3() {
           <button
             type="button"
             onClick={loginWithPin}
-            disabled={pin.length !== 4}
+            disabled={pin.length !== 4 || loginIntroVisible}
             style={{
               width: "100%",
               marginTop: 14,
@@ -4610,7 +4696,10 @@ function VisualBracketBoardV3() {
             }}
           >
             <Lock size={15} style={{ marginRight: 7 }} />
-            ENTER THE ARENA
+
+{loginIntroVisible
+  ? "ENTERING..."
+  : "ENTER THE ARENA"}
           </button>
 
           {/* Live platform stats */}
@@ -4729,6 +4818,14 @@ function VisualBracketBoardV3() {
       >
         SHADOWBORN ZA • VICTORY AWAITS IN THE SHADOWS
       </div>
+      {loginIntroVisible && loginIntroPlayer ? (
+  <LoginIntro
+    player={loginIntroPlayer}
+    logo={state.logoUrl || DEFAULT_LOGO}
+    fallbackImage={DEFAULT_LOGO}
+    isMobile={isMobile}
+  />
+) : null}
     </div>
   );
 }
@@ -6405,9 +6502,10 @@ const pendingCallout = state.callouts?.find(
                 <div>
                   <div style={{ marginBottom: 8 }}>Format</div>
                   <select value={tournament.format} onChange={(e) => updateState((prev) => ({ ...prev, tournament: { ...prev.tournament, format: e.target.value, teams: [], teamDraft: { name: "", memberIds: [] } } }))} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
-                    <option>1v1</option>
-                    <option>2v2</option>
-                    <option>4v4</option>
+                     <option value="1v1">1v1</option>
+  <option value="2v2">2v2</option>
+  <option value="3v3">3v3</option>
+  <option value="4v4">4v4</option>
                   </select>
                 </div>
 
@@ -7178,20 +7276,58 @@ const pendingCallout = state.callouts?.find(
         >
           <div style={{ ...cardStyle(), maxWidth: 460, width: "100%" }}>
             <h2 style={{ marginTop: 0 }}>🏆 Weekly Challenge Completed</h2>
+            <div
+  style={{
+    padding: 12,
+    marginBottom: 14,
+    borderRadius: 14,
+    background: "rgba(168,85,247,0.12)",
+    border: "1px solid rgba(168,85,247,0.24)",
+  }}
+>
+  <div
+    style={{
+      color: "#a99cbe",
+      fontSize: 11,
+      fontWeight: 800,
+      marginBottom: 4,
+    }}
+  >
+    AWARDING PLAYER
+  </div>
+
+  <div
+    style={{
+      color: "white",
+      fontSize: 18,
+      fontWeight: 900,
+    }}
+  >
+    {players.find(
+      (player) =>
+        Number(player.id) ===
+        Number(weeklyAwardDraft.playerId)
+    )?.name || "Unknown Player"}
+  </div>
+</div>
 
             <label>
               CR Reward
               <input
-                type="number"
-                value={weeklyAwardDraft.amount}
-                onChange={(e) =>
-                  setWeeklyAwardDraft({
-                    ...weeklyAwardDraft,
-                    amount: e.target.value,
-                  })
-                }
-                style={inputStyle(false)}
-              />
+  type="number"
+  min="1"
+  step="1"
+  inputMode="numeric"
+  value={weeklyAwardDraft.amount}
+  onChange={(e) =>
+    setWeeklyAwardDraft({
+      ...weeklyAwardDraft,
+      amount: e.target.value,
+    })
+  }
+  placeholder="Enter CR reward"
+  style={inputStyle(false)}
+/>
             </label>
 
             <label>
