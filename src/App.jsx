@@ -181,41 +181,86 @@ function getRank(points) {
 
 function cardStyle() {
   return {
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    position: "relative",
+
+    background:
+      "linear-gradient(145deg, rgba(18,14,27,0.68), rgba(8,6,14,0.58))",
+
+    backdropFilter: "blur(18px)",
+    WebkitBackdropFilter: "blur(18px)",
+
+    border: "1px solid rgba(216,180,254,0.11)",
     borderRadius: 22,
     padding: 16,
-    boxShadow: "0 14px 34px rgba(0,0,0,0.26)",
+
+    boxShadow:
+      "0 18px 45px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.025)",
   };
 }
 
 function inputStyle(disabled = false) {
   return {
     width: "100%",
-    padding: "10px 12px",
+    padding: "11px 13px",
     borderRadius: 12,
-    border: "1px solid #3b2a57",
-    background: disabled ? "#1b122c" : "#140c24",
-    color: disabled ? "#9d90b7" : "white",
+
+    border: disabled
+      ? "1px solid rgba(255,255,255,0.06)"
+      : "1px solid rgba(192,132,252,0.20)",
+
+    background: disabled
+      ? "rgba(12,9,18,0.40)"
+      : "rgba(9,6,15,0.62)",
+
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+
+    color: disabled ? "#8e849e" : "#ffffff",
     boxSizing: "border-box",
     opacity: disabled ? 0.7 : 1,
+
+    outline: "none",
+    boxShadow: disabled
+      ? "none"
+      : "inset 0 0 14px rgba(0,0,0,0.18)",
   };
 }
 
 function buttonStyle(active = false, disabled = false) {
   return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+
     padding: "10px 14px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.1)",
+
+    border: active
+      ? "1px solid rgba(192,132,252,0.42)"
+      : "1px solid rgba(255,255,255,0.09)",
+
     background: disabled
-      ? "rgba(255,255,255,0.04)"
+      ? "rgba(255,255,255,0.035)"
       : active
-      ? "linear-gradient(135deg, #7c3aed, #a855f7)"
-      : "rgba(255,255,255,0.06)",
-    color: disabled ? "#9d90b7" : "white",
+      ? "linear-gradient(135deg, rgba(124,58,237,0.92), rgba(168,85,247,0.92))"
+      : "linear-gradient(145deg, rgba(24,18,34,0.72), rgba(10,7,17,0.62))",
+
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+
+    color: disabled ? "#8f849e" : "#ffffff",
     cursor: disabled ? "not-allowed" : "pointer",
-    fontWeight: 700,
-    opacity: disabled ? 0.7 : 1,
+    fontWeight: 800,
+
+    opacity: disabled ? 0.66 : 1,
+
+    boxShadow: active
+      ? "0 8px 24px rgba(124,58,237,0.28)"
+      : "0 7px 20px rgba(0,0,0,0.20)",
+
+    transition:
+      "transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
   };
 }
 
@@ -401,6 +446,9 @@ export default function App() {
   completed: false,
 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [onlinePlayers, setOnlinePlayers] = useState([]);
+const [onlinePlayersExpanded, setOnlinePlayersExpanded] =
+  useState(false);
   const [pin, setPin] = useState("");
   const [selectedLoginPlayerId, setSelectedLoginPlayerId] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -970,7 +1018,34 @@ useEffect(() => {
 
   return () => clearInterval(interval);
 }, [loggedInPlayer]);
-    
+    useEffect(() => {
+  if (!loggedInPlayer) {
+    setOnlinePlayers([]);
+    return;
+  }
+
+  updateMyPresence();
+  loadOnlinePlayers();
+
+  const presenceInterval = setInterval(() => {
+    updateMyPresence();
+  }, 25000);
+
+  const onlinePlayersInterval = setInterval(() => {
+    loadOnlinePlayers();
+  }, 10000);
+
+  return () => {
+    clearInterval(presenceInterval);
+    clearInterval(onlinePlayersInterval);
+  };
+}, [
+  loggedInPlayer?.id,
+  loggedInPlayer?.name,
+  loggedInPlayer?.avatar,
+  loggedInPlayer?.cardPhoto,
+  tab,
+]);
   
 
   useEffect(() => {
@@ -1175,7 +1250,78 @@ setTimeout(() => {
 }, 4200);
 }
 
-  function logout() {
+function getPresencePageName(currentTab) {
+  const pageNames = {
+    dashboard: "Dashboard",
+    players: "Players",
+    leaderboard: "Leaderboard",
+    tournament: "Tournament",
+    callouts: "Call-outs",
+    sunday: "Sunday Games",
+    recommendations: "Recommendations",
+    divisions: "Divisions",
+    hallOfFame: "Hall of Fame",
+    challenges: "Challenges",
+  };
+
+  return pageNames[currentTab] || "Shadowborn ZA";
+}
+async function updateMyPresence() {
+  if (!loggedInPlayer) return;
+
+  const presenceData = {
+    player_id: Number(loggedInPlayer.id),
+    player_name: loggedInPlayer.name,
+    avatar_url:
+      loggedInPlayer.avatar ||
+      loggedInPlayer.cardPhoto ||
+      "",
+    current_page: getPresencePageName(tab),
+    last_seen: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("shadowborn_presence")
+    .upsert(presenceData, {
+      onConflict: "player_id",
+    });
+
+  if (error) {
+    console.error("Presence update failed:", error);
+  }
+}
+
+async function loadOnlinePlayers() {
+  const onlineCutoff = new Date(
+    Date.now() - 75 * 1000
+  ).toISOString();
+
+  const { data, error } = await supabase
+    .from("shadowborn_presence")
+    .select("*")
+    .gte("last_seen", onlineCutoff)
+    .order("last_seen", {
+      ascending: false,
+    });
+
+  if (error) {
+    console.error("Online players load failed:", error);
+    return;
+  }
+
+  setOnlinePlayers(data || []);
+}
+
+async function removeMyPresence() {
+  if (!loggedInPlayer) return;
+
+  await supabase
+    .from("shadowborn_presence")
+    .delete()
+    .eq("player_id", Number(loggedInPlayer.id));
+}
+  async function logout() {
+    await removeMyPresence();
     setAuth(null);
     setPin("");
     setSelectedLoginPlayerId("");
@@ -2992,12 +3138,44 @@ function resetAllCR() {
   }));
 }
   const appBg = {
-    minHeight: "100vh",
-    background:
-      "radial-gradient(circle at top left, rgba(168,85,247,0.35), transparent 25%), linear-gradient(135deg, #0a0612, #12091d 55%, #1f1036)",
-    color: "white",
-    fontFamily: "Arial, sans-serif",
-  };
+  minHeight: "100vh",
+  position: "relative",
+  isolation: "isolate",
+  overflowX: "hidden",
+
+  backgroundColor: "#05030a",
+
+  backgroundImage: `
+    radial-gradient(
+      circle at 15% 5%,
+      rgba(126,34,206,0.28),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 88% 18%,
+      rgba(88,28,135,0.20),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 50% 95%,
+      rgba(76,29,149,0.18),
+      transparent 42%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(3,2,8,0.92) 0%,
+      rgba(7,3,13,0.88) 44%,
+      rgba(4,2,8,0.96) 100%
+    )
+  `,
+
+  backgroundAttachment: "fixed",
+  backgroundRepeat: "no-repeat",
+  backgroundSize: "cover",
+
+  color: "#ffffff",
+  fontFamily: "Arial, sans-serif",
+};
 
   function PlayerCard({ player }) {
     const rank = getRank(player.points);
@@ -4546,6 +4724,110 @@ const pendingCallout = state.callouts?.find(
 );
   return (
     <div style={appBg}>
+    {/* GLOBAL SHADOWBORN BACKGROUND ATMOSPHERE */}
+<div
+  aria-hidden="true"
+  style={{
+    position: "fixed",
+    inset: 0,
+    zIndex: -3,
+    overflow: "hidden",
+    pointerEvents: "none",
+  }}
+>
+  {/* Soft central purple light */}
+  <div
+    style={{
+      position: "absolute",
+      width: isMobile ? 500 : 1050,
+      height: isMobile ? 500 : 1050,
+      top: isMobile ? -180 : -440,
+      left: "50%",
+      transform: "translateX(-50%)",
+      borderRadius: "50%",
+
+      background:
+        "radial-gradient(circle, rgba(126,34,206,0.22) 0%, rgba(88,28,135,0.10) 40%, transparent 72%)",
+
+      filter: "blur(22px)",
+    }}
+  />
+
+  {/* Left smoke */}
+  <div
+    style={{
+      position: "absolute",
+      width: isMobile ? 420 : 900,
+      height: isMobile ? 520 : 900,
+      left: isMobile ? -280 : -540,
+      top: "15%",
+      borderRadius: "50%",
+
+      background:
+        "radial-gradient(ellipse, rgba(109,40,217,0.13), transparent 68%)",
+
+      filter: "blur(42px)",
+      transform: "rotate(-18deg)",
+    }}
+  />
+
+  {/* Right smoke */}
+  <div
+    style={{
+      position: "absolute",
+      width: isMobile ? 440 : 950,
+      height: isMobile ? 560 : 920,
+      right: isMobile ? -300 : -580,
+      top: "35%",
+      borderRadius: "50%",
+
+      background:
+        "radial-gradient(ellipse, rgba(88,28,135,0.15), transparent 70%)",
+
+      filter: "blur(46px)",
+      transform: "rotate(22deg)",
+    }}
+  />
+
+  {/* Faint Shadowborn emblem */}
+  <img
+    src={state.logoUrl || DEFAULT_LOGO}
+    alt=""
+    style={{
+      position: "fixed",
+      right: isMobile ? -110 : -90,
+      top: isMobile ? 120 : 55,
+
+      width: isMobile ? 340 : 660,
+      height: isMobile ? 340 : 660,
+
+      objectFit: "contain",
+      opacity: isMobile ? 0.035 : 0.045,
+
+      filter:
+        "grayscale(1) brightness(1.6) contrast(1.2) drop-shadow(0 0 45px rgba(126,34,206,0.28))",
+
+      mixBlendMode: "screen",
+
+      WebkitMaskImage:
+        "radial-gradient(circle, black 24%, rgba(0,0,0,0.72) 48%, transparent 72%)",
+
+      maskImage:
+        "radial-gradient(circle, black 24%, rgba(0,0,0,0.72) 48%, transparent 72%)",
+    }}
+  />
+
+  {/* Dark vignette */}
+  <div
+    style={{
+      position: "absolute",
+      inset: 0,
+
+      background:
+        "radial-gradient(circle at center, transparent 28%, rgba(0,0,0,0.62) 100%)",
+    }}
+  />
+</div>
     <style>{glowStyles}</style>
     {previewImage && (
   <div
@@ -4924,63 +5206,448 @@ const pendingCallout = state.callouts?.find(
     </div>
   </div>
 )}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-          <div style={{ color: "#a78bfa" }}>
-            Logged in as <strong>{loggedInPlayer.name}</strong> • {loggedInPlayer.role}
-            {saving ? " • Saving..." : ""}
-          </div>
+      {/* LOGGED-IN TOP BAR */}
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+    flexWrap: "wrap",
+  }}
+>
+  <div
+    style={{
+      color: "#b8a7d4",
+      fontSize: isMobile ? 13 : 14,
+    }}
+  >
+    Logged in as{" "}
+    <strong style={{ color: "#c084fc" }}>
+      {loggedInPlayer.name}
+    </strong>{" "}
+    • {loggedInPlayer.role}
+    {saving ? " • Saving..." : ""}
+  </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a
-              href={DISCORD_LINK}
-              target="_blank"
-              rel="noreferrer"
+  <div
+    style={{
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+    }}
+  >
+    <a
+      href={DISCORD_LINK}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        ...buttonStyle(false, false),
+        textDecoration: "none",
+      }}
+    >
+      <MessageCircle size={14} />
+      Discord
+    </a>
+
+    <button
+      type="button"
+      onClick={logout}
+      style={buttonStyle(false, false)}
+    >
+      <LogOut size={14} />
+      Logout
+    </button>
+  </div>
+</div>
+
+{/* PREMIUM CLAN HERO */}
+<div
+  style={{
+    ...cardStyle(),
+    position: "relative",
+    overflow: "hidden",
+    marginBottom: 18,
+    padding: isMobile ? 20 : 28,
+
+    background:
+      "linear-gradient(135deg, rgba(14,9,23,0.72), rgba(5,3,10,0.48))",
+
+    border: "1px solid rgba(192,132,252,0.16)",
+  }}
+>
+  {/* Ambient hero glow */}
+  <div
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      width: isMobile ? 260 : 520,
+      height: isMobile ? 260 : 520,
+      left: isMobile ? -110 : -180,
+      top: isMobile ? -100 : -210,
+      borderRadius: "50%",
+
+      background:
+        "radial-gradient(circle, rgba(126,34,206,0.30), rgba(88,28,135,0.10) 45%, transparent 72%)",
+
+      filter: "blur(18px)",
+      pointerEvents: "none",
+    }}
+  />
+
+  <div
+    style={{
+      position: "relative",
+      zIndex: 2,
+      display: "grid",
+      gridTemplateColumns: isMobile
+        ? "1fr"
+        : "170px minmax(0, 1fr)",
+      gap: isMobile ? 20 : 28,
+      alignItems: "center",
+    }}
+  >
+    {/* New circular emblem */}
+    <div
+      style={{
+        width: isMobile ? 132 : 160,
+        height: isMobile ? 132 : 160,
+        margin: isMobile ? "0 auto" : 0,
+        borderRadius: "50%",
+        padding: 8,
+
+        background:
+          "radial-gradient(circle, rgba(168,85,247,0.30), rgba(5,3,10,0.84) 70%)",
+
+        border: "1px solid rgba(192,132,252,0.42)",
+
+        boxShadow:
+          "0 0 28px rgba(168,85,247,0.30), 0 0 70px rgba(88,28,135,0.22)",
+      }}
+    >
+      <img
+        src={state.logoUrl || DEFAULT_LOGO}
+        alt="Shadowborn ZA"
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          borderRadius: "50%",
+
+          WebkitMaskImage:
+            "radial-gradient(circle, black 58%, rgba(0,0,0,0.82) 72%, transparent 88%)",
+
+          maskImage:
+            "radial-gradient(circle, black 58%, rgba(0,0,0,0.82) 72%, transparent 88%)",
+        }}
+      />
+    </div>
+
+    <div
+      style={{
+        minWidth: 0,
+        textAlign: isMobile ? "center" : "left",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          justifyContent: isMobile ? "center" : "flex-start",
+          marginBottom: 14,
+        }}
+      >
+        <span style={badgeStyle()}>
+          <Trophy size={14} />
+          Clan Hub
+        </span>
+
+        <span style={badgeStyle()}>
+          <ShieldCheck size={14} />
+          Saved Online
+        </span>
+
+        <span style={badgeStyle()}>
+          <Swords size={14} />
+          Double Elimination
+        </span>
+
+        <span style={badgeStyle()}>
+          <Star size={14} />
+          Hall of Fame
+        </span>
+      </div>
+
+      <h1
+        style={{
+          margin: 0,
+          fontSize: isMobile ? 34 : 52,
+          lineHeight: 1,
+          letterSpacing: -1,
+          fontWeight: 950,
+        }}
+      >
+        {state.clanName}
+      </h1>
+
+      <div
+        style={{
+          color: "#bbaecb",
+          marginTop: 12,
+          fontSize: isMobile ? 16 : 19,
+        }}
+      >
+        {state.tagline}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          justifyContent: isMobile ? "center" : "flex-start",
+          marginTop: 20,
+        }}
+      >
+        <div
+          style={{
+            padding: "9px 13px",
+            borderRadius: 999,
+            background: "rgba(34,197,94,0.08)",
+            border: "1px solid rgba(34,197,94,0.18)",
+            color: "#86efac",
+            fontSize: 12,
+            fontWeight: 850,
+          }}
+        >
+          ● Platform Online
+        </div>
+
+        <div
+          style={{
+            padding: "9px 13px",
+            borderRadius: 999,
+            background: "rgba(168,85,247,0.09)",
+            border: "1px solid rgba(192,132,252,0.18)",
+            color: "#d8b4fe",
+            fontSize: 12,
+            fontWeight: 850,
+          }}
+        >
+          {players.length} Clan Members
+        </div>
+      </div>
+    </div>
+  </div>
+</div>  
+
+{/* ONLINE MEMBERS */}
+<div
+  style={{
+    ...cardStyle(),
+    marginBottom: 18,
+    padding: isMobile ? 15 : 18,
+    overflow: "hidden",
+  }}
+>
+  <button
+    type="button"
+    onClick={() =>
+      setOnlinePlayersExpanded((current) => !current)
+    }
+    style={{
+      width: "100%",
+      padding: 0,
+      border: "none",
+      background: "transparent",
+      color: "white",
+      cursor: "pointer",
+
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 14,
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span
+        style={{
+          width: 11,
+          height: 11,
+          flexShrink: 0,
+          borderRadius: "50%",
+          background: "#22c55e",
+          boxShadow:
+            "0 0 12px rgba(34,197,94,0.75)",
+        }}
+      />
+
+      <span
+        style={{
+          fontWeight: 950,
+          fontSize: isMobile ? 14 : 16,
+          letterSpacing: 0.4,
+        }}
+      >
+        Online Now ({onlinePlayers.length})
+      </span>
+    </div>
+
+    <span
+      style={{
+        color: "#c084fc",
+        fontSize: 13,
+        fontWeight: 850,
+      }}
+    >
+      {onlinePlayersExpanded ? "Collapse ▲" : "View all ▼"}
+    </span>
+  </button>
+
+  {onlinePlayersExpanded ? (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: isMobile
+          ? "1fr"
+          : "repeat(auto-fit, minmax(210px, 1fr))",
+        gap: 10,
+        marginTop: 16,
+      }}
+    >
+      {onlinePlayers.length === 0 ? (
+        <div
+          style={{
+            color: "#9589a8",
+            padding: "12px 2px",
+          }}
+        >
+          No clan members are currently online.
+        </div>
+      ) : (
+        onlinePlayers.map((onlinePlayer) => {
+          const matchingPlayer = players.find(
+            (player) =>
+              Number(player.id) ===
+              Number(onlinePlayer.player_id)
+          );
+
+          const avatarImage =
+            onlinePlayer.avatar_url ||
+            matchingPlayer?.avatar ||
+            matchingPlayer?.cardPhoto ||
+            DEFAULT_LOGO;
+
+          return (
+            <button
+              key={onlinePlayer.player_id}
+              type="button"
+              onClick={() => {
+                if (matchingPlayer) {
+                  setSelectedProfilePlayerId(
+                    matchingPlayer.id
+                  );
+                }
+              }}
               style={{
-                ...buttonStyle(false, false),
-                textDecoration: "none",
-                display: "inline-flex",
+                padding: 11,
+                borderRadius: 15,
+
+                display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 11,
+
+                border:
+                  "1px solid rgba(255,255,255,0.07)",
+
+                background:
+                  "linear-gradient(145deg, rgba(24,18,34,0.62), rgba(8,6,14,0.52))",
+
+                color: "white",
+                textAlign: "left",
+                cursor: matchingPlayer
+                  ? "pointer"
+                  : "default",
+
+                boxShadow:
+                  "0 8px 20px rgba(0,0,0,0.18)",
               }}
             >
-              <MessageCircle size={14} /> Discord
-            </a>
+              <div
+                style={{
+                  position: "relative",
+                  width: 46,
+                  height: 46,
+                  flexShrink: 0,
+                }}
+              >
+                <img
+                  src={avatarImage}
+                  alt={onlinePlayer.player_name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    border:
+                      "1px solid rgba(192,132,252,0.42)",
+                  }}
+                />
 
-            <button onClick={logout} style={buttonStyle(false, false)}>
-              <LogOut size={14} /> Logout
-            </button>
-          </div>
-        </div>
-
-        <div style={{ ...cardStyle(), padding: 24, marginBottom: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-            <div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                <span style={badgeStyle()}><Trophy size={14} /> Clan Hub</span>
-                <span style={badgeStyle()}><ShieldCheck size={14} /> Saved Online</span>
-                <span style={badgeStyle()}><Swords size={14} /> Double Elimination</span>
-                <span style={badgeStyle()}><Star size={14} /> Hall of Fame</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    width: 12,
+                    height: 12,
+                    right: -1,
+                    bottom: -1,
+                    borderRadius: "50%",
+                    background: "#22c55e",
+                    border: "2px solid #0b0711",
+                    boxShadow:
+                      "0 0 9px rgba(34,197,94,0.8)",
+                  }}
+                />
               </div>
-              <h1 style={{ margin: 0, fontSize: isMobile ? 30 : 46 }}>{state.clanName}</h1>
-              <div style={{ color: "#d6c8ef", marginTop: 8 }}>{state.tagline}</div>
-            </div>
 
-            <img
-              src={state.logoUrl || DEFAULT_LOGO}
-              alt="Shadowborn ZA"
-              style={{
-                width: isMobile ? 90 : 126,
-                height: isMobile ? 90 : 126,
-                objectFit: "contain",
-                borderRadius: 28,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                padding: 8,
-              }}
-            />
-          </div>
-        </div>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontWeight: 900,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {onlinePlayer.player_name}
+                </div>
 
+                <div
+                  style={{
+                    color: "#a99dbb",
+                    fontSize: 12,
+                    marginTop: 3,
+                  }}
+                >
+                  {onlinePlayer.current_page ||
+                    "Shadowborn ZA"}
+                </div>
+              </div>
+            </button>
+          );
+        })
+      )}
+    </div>
+  ) : null}
+</div>
         {state.championBanner ? (
           <div style={{ ...cardStyle(), marginBottom: 18, background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(168,85,247,0.18))" }}>
             <div style={{ fontSize: 14, color: "#fde68a", fontWeight: 800 }}>CURRENT CHAMPION</div>
