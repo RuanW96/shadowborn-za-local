@@ -25,6 +25,8 @@ import {
 import { supabase } from "./supabase";
 import LoginIntro from "./components/LoginIntro";
 import DivisionPlayerCard from "./components/DivisionPlayerCard";
+import TournamentResults from "./components/TournamentResults";
+import Scrims from "./components/Scrims";
 const STORAGE_ROW_ID = 1;
 const DISCORD_LINK = "https://discord.gg/DRads9MkB";
 const DEFAULT_LOGO = "/shadowborn-za-logo.jpg";
@@ -1252,17 +1254,19 @@ setTimeout(() => {
 
 function getPresencePageName(currentTab) {
   const pageNames = {
-    dashboard: "Dashboard",
-    players: "Players",
-    leaderboard: "Leaderboard",
-    tournament: "Tournament",
-    callouts: "Call-outs",
-    sunday: "Sunday Games",
-    recommendations: "Recommendations",
-    divisions: "Divisions",
-    hallOfFame: "Hall of Fame",
-    challenges: "Challenges",
-  };
+  dashboard: "Dashboard",
+  players: "Players",
+  leaderboard: "Leaderboard",
+  tournament: "Clan Tournament",
+  tournamentResults: "Tournament Results",
+  scrims: "Scrims",
+  callouts: "Call-outs",
+  sunday: "Sunday Games",
+  recommendations: "Recommendations",
+  divisions: "Divisions",
+  hallOfFame: "Hall of Fame",
+  challenges: "Challenges",
+};
 
   return pageNames[currentTab] || "Shadowborn ZA";
 }
@@ -5736,19 +5740,23 @@ const pendingCallout = state.callouts?.find(
     </div>
 
     {/* Menu Items */}
-    {[
-      ["dashboard", "Dashboard", <Home size={18} />],
-      ["leaderboard", "Leaderboard", <Trophy size={18} />],
-      ["competition", "A-Team / Challengers", <ShieldCheck size={18} />],
-      ["players", "Players", <Users size={18} />],
-      ["callouts", "Call-outs", <Swords size={18} />],
-      ["tournament", "Tournament", <Crown size={18} />],
-      ["bracket", "Bracket", <Flame size={18} />],
-      ["hall", "Hall of Fame", <Star size={18} />],
-      ["sunday", "Sunday Points", <Flame size={18} />],
-      ["vote", "Vote", <Crown size={18} />],
-      ["recommendations", "Recommendations", <Star size={18} />],
-    ].map(([key, label, icon]) => (
+   {[
+  ["dashboard", "Dashboard", <Home size={18} />],
+  ["leaderboard", "Leaderboard", <Trophy size={18} />],
+  ["competition", "A-Team / Challengers", <ShieldCheck size={18} />],
+  ["players", "Players", <Users size={18} />],
+  ["callouts", "Call-outs", <Swords size={18} />],
+
+  ["tournament", "Clan Tournament", <Crown size={18} />],
+  ["tournamentResults", "Tournament Results", <Medal size={18} />],
+  ["scrims", "Scrims", <Swords size={18} />],
+  ["bracket", "Bracket", <Flame size={18} />],
+
+  ["hall", "Hall of Fame", <Star size={18} />],
+  ["sunday", "Sunday Points", <Flame size={18} />],
+  ["vote", "Vote", <Crown size={18} />],
+  ["recommendations", "Recommendations", <Star size={18} />],
+].map(([key, label, icon]) => (
       <button
         key={key}
         type="button"
@@ -5781,7 +5789,22 @@ const pendingCallout = state.callouts?.find(
     ))}
   </div>
 </>
-
+{tab === "tournamentResults" && (
+  <TournamentResults
+    players={players}
+    loggedInPlayer={loggedInPlayer}
+    canAdmin={canAdmin}
+    storageRowId={STORAGE_ROW_ID}
+  />
+)}
+{tab === "scrims" && (
+  <Scrims
+    players={players}
+    loggedInPlayer={loggedInPlayer}
+    canAdmin={canAdmin}
+    storageRowId={STORAGE_ROW_ID}
+  />
+)}
         {tab === "dashboard" && (
   <>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 20 }}>
