@@ -488,7 +488,11 @@ const [loginIntroVisible, setLoginIntroVisible] = useState(false);
 losingSubstituteIds: [],
     flawless: false,
   });
+  const [sundaySetupOpen, setSundaySetupOpen] = useState(true);
+const [sundaySubsOpen, setSundaySubsOpen] = useState(false);
+const [sundayHistoryOpen, setSundayHistoryOpen] = useState(false);
 const [sundayTeams, setSundayTeams] = useState([]);
+const [sundayExtrasOpen, setSundayExtrasOpen] = useState(false);
 const [sundayTeamCount, setSundayTeamCount] = useState(3);
 const [sundaySelectedPlayers, setSundaySelectedPlayers] = useState([]);
 const [sundayRoundDraft, setSundayRoundDraft] = useState({
@@ -2644,24 +2648,45 @@ function createSundayRound() {
     return;
   }
 
-  if (sundayRoundDraft.teamAIndex === sundayRoundDraft.teamBIndex) {
+  if (
+    sundayRoundDraft.teamAIndex ===
+    sundayRoundDraft.teamBIndex
+  ) {
     alert("Team A and Team B cannot be the same team.");
     return;
   }
 
+  const nextRoundNumber =
+    sundayRounds.length + 1;
+
   const round = {
     id: Date.now(),
-    roundName: sundayRoundDraft.roundName || `Round ${sundayRounds.length + 1}`,
-    teamAIndex: Number(sundayRoundDraft.teamAIndex),
-    teamBIndex: Number(sundayRoundDraft.teamBIndex),
+
+    roundName: `Round ${nextRoundNumber}`,
+
+    teamAIndex: Number(
+      sundayRoundDraft.teamAIndex
+    ),
+
+    teamBIndex: Number(
+      sundayRoundDraft.teamBIndex
+    ),
+
     winnerIndex:
       sundayRoundDraft.winnerIndex === ""
         ? ""
-        : Number(sundayRoundDraft.winnerIndex),
-    createdAt: new Date().toLocaleString(),
+        : Number(
+            sundayRoundDraft.winnerIndex
+          ),
+
+    createdAt:
+      new Date().toLocaleString(),
   };
 
-  const nextRounds = [...sundayRounds, round];
+  const nextRounds = [
+    ...sundayRounds,
+    round,
+  ];
 
   setSundayRounds(nextRounds);
 
@@ -2671,7 +2696,9 @@ function createSundayRound() {
   }));
 
   setSundayRoundDraft({
-    roundName: `Round ${nextRounds.length + 1}`,
+    roundName: `Round ${
+      nextRounds.length + 1
+    }`,
     teamAIndex: "",
     teamBIndex: "",
     winnerIndex: "",
@@ -7020,176 +7047,621 @@ const pendingCallout = state.callouts?.find(
                 <input placeholder="Map / Match Name" value={sundayEntry.mapName} onChange={(e) => setSundayEntry({ ...sundayEntry, mapName: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
                 <input placeholder="Score Summary" value={sundayEntry.scoreText} onChange={(e) => setSundayEntry({ ...sundayEntry, scoreText: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin} />
 
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <h4>Winning Team</h4>
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <select key={`w-${index}`} value={sundayEntry.winningTeamIds[index] || ""} onChange={(e) => {
-                        const next = [...sundayEntry.winningTeamIds];
-                        next[index] = Number(e.target.value);
-                        setSundayEntry({ ...sundayEntry, winningTeamIds: next.filter(Boolean) });
-                      }} style={{ ...inputStyle(!canAdmin), marginBottom: 8 }} disabled={!canAdmin}>
-                        <option value="">Select player</option>
-                        {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    ))}
-                  </div>
-
-                  <div>
-                    <h4>Losing Team</h4>
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <select key={`l-${index}`} value={sundayEntry.losingTeamIds[index] || ""} onChange={(e) => {
-                        const next = [...sundayEntry.losingTeamIds];
-                        next[index] = Number(e.target.value);
-                        setSundayEntry({ ...sundayEntry, losingTeamIds: next.filter(Boolean) });
-                      }} style={{ ...inputStyle(!canAdmin), marginBottom: 8 }} disabled={!canAdmin}>
-                        <option value="">Select player</option>
-                        {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    ))}
-                  </div>
-                </div>
-
-                {[
-                  ["Winning MVP", "winningMvpId"],
-                  ["Losing MVP", "losingMvpId"],
-                  ["Highest Objective", "objectiveLeaderId"],
-                  ["Best KD Overall", "bestKdId"],
-                  ["0 Deaths", "zeroDeathId"],
-                ].map(([label, field]) => (
-                  <select key={field} value={sundayEntry[field]} onChange={(e) => setSundayEntry({ ...sundayEntry, [field]: e.target.value })} style={inputStyle(!canAdmin)} disabled={!canAdmin}>
-                    <option value="">{label}</option>
-                    {(
-  field === "winningMvpId"
-    ? sundayWinningPlayers
-    : field === "losingMvpId"
-    ? sundayLosingPlayers
-    : sundayPlayingPlayers
-).map((p) => (
-  <option key={p.id} value={p.id}>
-    {p.name}
-  </option>
-))}
-                  </select>
-                ))}
-<div
+               <div
   style={{
     display: "grid",
     gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-    gap: 12,
-    padding: 14,
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    gap: 14,
   }}
 >
-  <div>
-    <h4 style={{ marginTop: 0, color: "#86efac" }}>
-      🏆 Winning Team Extra Players
-    </h4>
+  {/* WINNING TEAM */}
+  <div
+    style={{
+      padding: 14,
+      borderRadius: 16,
+      background: "rgba(34,197,94,0.035)",
+      border: "1px solid rgba(34,197,94,0.13)",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        marginBottom: 12,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            color: "#86efac",
+            fontWeight: 900,
+            fontSize: 14,
+          }}
+        >
+          🏆 Winning Team
+        </div>
 
-    <div style={{ color: "#d6caef", fontSize: 13, marginBottom: 10 }}>
-      Each selected player receives +10 points.
+        <div
+          style={{
+            color: "#8f849e",
+            fontSize: 10,
+            marginTop: 3,
+          }}
+        >
+          +10 CR per player
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "5px 8px",
+          borderRadius: 999,
+          background: "rgba(34,197,94,0.10)",
+          color: "#86efac",
+          fontSize: 10,
+          fontWeight: 800,
+        }}
+      >
+        {(sundayEntry.winningTeamIds || []).length}/4
+      </div>
     </div>
 
-    <div style={{ display: "grid", gap: 8 }}>
-      {players
-        .filter(
-          (player) =>
-            !(sundayEntry.winningTeamIds || [])
-              .map(Number)
-              .includes(Number(player.id)) &&
-            !(sundayEntry.losingTeamIds || [])
-              .map(Number)
-              .includes(Number(player.id))
-        )
-        .map((player) => (
-          <label
-            key={`winning-sub-${player.id}`}
-            style={{
-              padding: 9,
-              borderRadius: 10,
-              background: (sundayEntry.winningSubstituteIds || [])
-                .map(Number)
-                .includes(Number(player.id))
-                ? "rgba(34,197,94,0.20)"
-                : "rgba(0,0,0,0.18)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={(sundayEntry.winningSubstituteIds || [])
-                .map(Number)
-                .includes(Number(player.id))}
-              onChange={() =>
-                toggleSundaySubstitute("winning", player.id)
-              }
-              disabled={!canAdmin}
-              style={{ marginRight: 8 }}
-            />
+    <div style={{ display: "grid", gap: 7 }}>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <select
+          key={`w-${index}`}
+          value={sundayEntry.winningTeamIds[index] || ""}
+          onChange={(e) => {
+            const next = [...sundayEntry.winningTeamIds];
+            next[index] = Number(e.target.value);
 
-            {player.name}
-          </label>
-        ))}
+            setSundayEntry({
+              ...sundayEntry,
+              winningTeamIds: next.filter(Boolean),
+            });
+          }}
+          style={inputStyle(!canAdmin)}
+          disabled={!canAdmin}
+        >
+          <option value="">
+            Player {index + 1}
+          </option>
+
+          {players.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      ))}
     </div>
   </div>
 
-  <div>
-    <h4 style={{ marginTop: 0, color: "#fca5a5" }}>
-      💀 Losing Team Extra Players
-    </h4>
+  {/* LOSING TEAM */}
+  <div
+    style={{
+      padding: 14,
+      borderRadius: 16,
+      background: "rgba(239,68,68,0.03)",
+      border: "1px solid rgba(239,68,68,0.13)",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        marginBottom: 12,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            color: "#fca5a5",
+            fontWeight: 900,
+            fontSize: 14,
+          }}
+        >
+          💀 Losing Team
+        </div>
 
-    <div style={{ color: "#d6caef", fontSize: 13, marginBottom: 10 }}>
-      Each selected player receives -5 points.
+        <div
+          style={{
+            color: "#8f849e",
+            fontSize: 10,
+            marginTop: 3,
+          }}
+        >
+          -5 CR per player
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "5px 8px",
+          borderRadius: 999,
+          background: "rgba(239,68,68,0.09)",
+          color: "#fca5a5",
+          fontSize: 10,
+          fontWeight: 800,
+        }}
+      >
+        {(sundayEntry.losingTeamIds || []).length}/4
+      </div>
     </div>
 
-    <div style={{ display: "grid", gap: 8 }}>
-      {players
-        .filter(
-          (player) =>
-            !(sundayEntry.winningTeamIds || [])
-              .map(Number)
-              .includes(Number(player.id)) &&
-            !(sundayEntry.losingTeamIds || [])
-              .map(Number)
-              .includes(Number(player.id))
-        )
-        .map((player) => (
-          <label
-            key={`losing-sub-${player.id}`}
-            style={{
-              padding: 9,
-              borderRadius: 10,
-              background: (sundayEntry.losingSubstituteIds || [])
-                .map(Number)
-                .includes(Number(player.id))
-                ? "rgba(239,68,68,0.18)"
-                : "rgba(0,0,0,0.18)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={(sundayEntry.losingSubstituteIds || [])
-                .map(Number)
-                .includes(Number(player.id))}
-              onChange={() =>
-                toggleSundaySubstitute("losing", player.id)
-              }
-              disabled={!canAdmin}
-              style={{ marginRight: 8 }}
-            />
+    <div style={{ display: "grid", gap: 7 }}>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <select
+          key={`l-${index}`}
+          value={sundayEntry.losingTeamIds[index] || ""}
+          onChange={(e) => {
+            const next = [...sundayEntry.losingTeamIds];
+            next[index] = Number(e.target.value);
 
-            {player.name}
-          </label>
-        ))}
+            setSundayEntry({
+              ...sundayEntry,
+              losingTeamIds: next.filter(Boolean),
+            });
+          }}
+          style={inputStyle(!canAdmin)}
+          disabled={!canAdmin}
+        >
+          <option value="">
+            Player {index + 1}
+          </option>
+
+          {players.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      ))}
     </div>
   </div>
 </div>
-                <label>
-                  <input type="checkbox" checked={sundayEntry.flawless} onChange={(e) => setSundayEntry({ ...sundayEntry, flawless: e.target.checked })} disabled={!canAdmin} /> Flawless victory bonus
+
+<div
+  style={{
+    padding: 14,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.025)",
+    border: "1px solid rgba(255,255,255,0.07)",
+  }}
+>
+  <div
+    style={{
+      marginBottom: 12,
+    }}
+  >
+    <div
+      style={{
+        fontWeight: 900,
+        fontSize: 14,
+      }}
+    >
+      ⭐ Match Awards
+    </div>
+
+    <div
+      style={{
+        color: "#8f849e",
+        fontSize: 10,
+        marginTop: 3,
+      }}
+    >
+      Optional performance bonuses for the current map
+    </div>
+  </div>
+
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: isMobile
+        ? "1fr"
+        : "repeat(2, minmax(0, 1fr))",
+      gap: 10,
+    }}
+  >
+    {[
+      ["Winning MVP", "winningMvpId"],
+      ["Losing MVP", "losingMvpId"],
+      ["Highest Objective", "objectiveLeaderId"],
+      ["Best KD Overall", "bestKdId"],
+      ["0 Deaths", "zeroDeathId"],
+    ].map(([label, field]) => {
+      const availablePlayers =
+        field === "winningMvpId"
+          ? sundayWinningPlayers
+          : field === "losingMvpId"
+          ? sundayLosingPlayers
+          : sundayPlayingPlayers;
+
+      return (
+        <div key={field}>
+          <label
+            style={{
+              display: "block",
+              color: "#8f849e",
+              fontSize: 10,
+              fontWeight: 800,
+              marginBottom: 5,
+              textTransform: "uppercase",
+              letterSpacing: 0.4,
+            }}
+          >
+            {label}
+          </label>
+
+          <select
+            value={sundayEntry[field]}
+            onChange={(e) =>
+              setSundayEntry({
+                ...sundayEntry,
+                [field]: e.target.value,
+              })
+            }
+            style={inputStyle(!canAdmin)}
+            disabled={!canAdmin}
+          >
+            <option value="">
+              Select player
+            </option>
+
+            {availablePlayers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    })}
+
+    <div>
+      <label
+        style={{
+          display: "block",
+          color: "#8f849e",
+          fontSize: 10,
+          fontWeight: 800,
+          marginBottom: 5,
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        Flawless Victory
+      </label>
+
+      <button
+        type="button"
+        onClick={() =>
+          setSundayEntry({
+            ...sundayEntry,
+            flawless: !sundayEntry.flawless,
+          })
+        }
+        disabled={!canAdmin}
+        style={{
+          width: "100%",
+          minHeight: 42,
+          borderRadius: 12,
+
+          border: sundayEntry.flawless
+            ? "1px solid rgba(34,197,94,0.35)"
+            : "1px solid rgba(192,132,252,0.20)",
+
+          background: sundayEntry.flawless
+            ? "rgba(34,197,94,0.13)"
+            : "rgba(9,6,15,0.62)",
+
+          color: sundayEntry.flawless
+            ? "#86efac"
+            : "#8f849e",
+
+          fontWeight: 850,
+          cursor: canAdmin ? "pointer" : "not-allowed",
+        }}
+      >
+        {sundayEntry.flawless
+          ? "✓ Flawless Bonus Active"
+          : "No Flawless Bonus"}
+      </button>
+    </div>
+  </div>
+</div>
+                
+<div
+  style={{
+    marginTop: 12,
+    marginBottom: 12,
+    borderRadius: 16,
+    background: "rgba(255,255,255,0.035)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  }}
+>
+  {/* EXTRA PLAYERS HEADER */}
+  <button
+    type="button"
+    onClick={() => setSundayExtrasOpen((prev) => !prev)}
+    style={{
+      width: "100%",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      padding: "14px 16px",
+      background: "transparent",
+      border: "none",
+      color: "#fff",
+      cursor: "pointer",
+      textAlign: "left",
+    }}
+  >
+    <div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 900,
+        }}
+      >
+        👥 Extra Players / Late Subs
+      </div>
+
+      <div
+        style={{
+          color: "#8f849e",
+          fontSize: 11,
+          marginTop: 4,
+        }}
+      >
+        Add players who joined the winning or losing side
+      </div>
+    </div>
+
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span
+        style={{
+          padding: "5px 9px",
+          borderRadius: 999,
+          background: "rgba(168,85,247,0.12)",
+          border: "1px solid rgba(168,85,247,0.22)",
+          color: "#d8b4fe",
+          fontSize: 11,
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {(sundayEntry.winningSubstituteIds || []).length +
+          (sundayEntry.losingSubstituteIds || []).length}{" "}
+        selected
+      </span>
+
+      <span
+        style={{
+          color: "#c084fc",
+          fontSize: 16,
+          transform: sundayExtrasOpen
+            ? "rotate(180deg)"
+            : "rotate(0deg)",
+          transition: "transform 0.2s ease",
+        }}
+      >
+        ▼
+      </span>
+    </div>
+  </button>
+
+  {/* EXPANDED EXTRA PLAYERS */}
+  {sundayExtrasOpen && (
+    <div
+      style={{
+        borderTop: "1px solid rgba(255,255,255,0.07)",
+        padding: 14,
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+        gap: 14,
+      }}
+    >
+      {/* WINNING EXTRAS */}
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 14,
+          background: "rgba(34,197,94,0.04)",
+          border: "1px solid rgba(34,197,94,0.12)",
+        }}
+      >
+        <div
+          style={{
+            color: "#86efac",
+            fontWeight: 900,
+            marginBottom: 4,
+          }}
+        >
+          🏆 Winning Side
+        </div>
+
+        <div
+          style={{
+            color: "#8f849e",
+            fontSize: 11,
+            marginBottom: 10,
+          }}
+        >
+          Extra players receive +10 points
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(2, minmax(0, 1fr))",
+            gap: 6,
+          }}
+        >
+          {players
+            .filter(
+              (player) =>
+                !(sundayEntry.winningTeamIds || [])
+                  .map(Number)
+                  .includes(Number(player.id)) &&
+                !(sundayEntry.losingTeamIds || [])
+                  .map(Number)
+                  .includes(Number(player.id))
+            )
+            .map((player) => {
+              const selected = (
+                sundayEntry.winningSubstituteIds || []
+              )
+                .map(Number)
+                .includes(Number(player.id));
+
+              return (
+                <label
+                  key={`winning-sub-${player.id}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 10px",
+                    borderRadius: 9,
+                    background: selected
+                      ? "rgba(34,197,94,0.16)"
+                      : "rgba(0,0,0,0.16)",
+                    border: selected
+                      ? "1px solid rgba(34,197,94,0.30)"
+                      : "1px solid transparent",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() =>
+                      toggleSundaySubstitute(
+                        "winning",
+                        player.id
+                      )
+                    }
+                    disabled={!canAdmin}
+                    style={{ marginRight: 7 }}
+                  />
+
+                  {player.name}
                 </label>
+              );
+            })}
+        </div>
+      </div>
+
+      {/* LOSING EXTRAS */}
+      <div
+        style={{
+          padding: 12,
+          borderRadius: 14,
+          background: "rgba(239,68,68,0.035)",
+          border: "1px solid rgba(239,68,68,0.12)",
+        }}
+      >
+        <div
+          style={{
+            color: "#fca5a5",
+            fontWeight: 900,
+            marginBottom: 4,
+          }}
+        >
+          💀 Losing Side
+        </div>
+
+        <div
+          style={{
+            color: "#8f849e",
+            fontSize: 11,
+            marginBottom: 10,
+          }}
+        >
+          Extra players receive -5 points
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(2, minmax(0, 1fr))",
+            gap: 6,
+          }}
+        >
+          {players
+            .filter(
+              (player) =>
+                !(sundayEntry.winningTeamIds || [])
+                  .map(Number)
+                  .includes(Number(player.id)) &&
+                !(sundayEntry.losingTeamIds || [])
+                  .map(Number)
+                  .includes(Number(player.id))
+            )
+            .map((player) => {
+              const selected = (
+                sundayEntry.losingSubstituteIds || []
+              )
+                .map(Number)
+                .includes(Number(player.id));
+
+              return (
+                <label
+                  key={`losing-sub-${player.id}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 10px",
+                    borderRadius: 9,
+                    background: selected
+                      ? "rgba(239,68,68,0.14)"
+                      : "rgba(0,0,0,0.16)",
+                    border: selected
+                      ? "1px solid rgba(239,68,68,0.28)"
+                      : "1px solid transparent",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() =>
+                      toggleSundaySubstitute(
+                        "losing",
+                        player.id
+                      )
+                    }
+                    disabled={!canAdmin}
+                    style={{ marginRight: 7 }}
+                  />
+
+                  {player.name}
+                </label>
+              );
+            })}
+        </div>
+      </div>
+    </div>
+  )}
+</div>
                
 <div
   style={{
@@ -7199,8 +7671,52 @@ const pendingCallout = state.callouts?.find(
     background: "rgba(124,58,237,0.10)",
   }}
 >
-  <h3 style={{ marginTop: 0 }}>🎲 Sunday Team Generator</h3>
+  <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+  }}
+>
+  <div>
+    <h3 style={{ margin: 0 }}>
+      🎲 Sunday Team Generator
+    </h3>
 
+    <div
+      style={{
+        color: "#8f849e",
+        fontSize: 12,
+        marginTop: 5,
+      }}
+    >
+      {sundayTeams.length > 0
+        ? `${sundaySelectedPlayers.length} attending • ${sundayTeams.length} teams generated`
+        : "Select attending players and generate balanced teams"}
+    </div>
+  </div>
+
+  {sundayTeams.length > 0 && (
+    <button
+      type="button"
+      onClick={() =>
+        setSundaySetupOpen((prev) => !prev)
+      }
+      style={buttonStyle(false, false)}
+    >
+      {sundaySetupOpen
+        ? "Hide Setup"
+        : "Manage Players / Subs"}
+    </button>
+  )}
+</div>
+<div
+  style={{
+    display: sundaySetupOpen ? "block" : "none",
+  }}
+>
   <div style={{ color: "#d6caef", marginBottom: 12 }}>
     Select attending players, choose number of teams, then generate CR-balanced teams.
   </div>
@@ -7253,7 +7769,10 @@ const pendingCallout = state.callouts?.find(
   <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
     <button
       type="button"
-      onClick={generateSundayTeams}
+      onClick={() => {
+  generateSundayTeams();
+  setSundaySetupOpen(false);
+}}
       style={buttonStyle(true, !canAdmin)}
       disabled={!canAdmin}
     >
@@ -7271,7 +7790,7 @@ const pendingCallout = state.callouts?.find(
       Clear
     </button>
   </div>
-
+</div>
   {sundayTeams.length > 0 && (
     <div style={{ marginTop: 18 }}>
       <h3>Generated Teams</h3>
@@ -7365,137 +7884,338 @@ const pendingCallout = state.callouts?.find(
       background: "rgba(0,0,0,0.18)",
     }}
   >
-    <h3 style={{ marginTop: 0 }}>🎮 Sunday Round Manager</h3>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 14,
+        flexWrap: "wrap",
+        marginBottom: 18,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            color: "#c084fc",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: 0.6,
+            marginBottom: 6,
+          }}
+        >
+          SUNDAY MATCHES
+        </div>
 
-    <div style={{ color: "#d6caef", marginBottom: 12 }}>
-      Create each round from the locked teams. This saves the Sunday match flow.
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 24,
+            fontWeight: 950,
+          }}
+        >
+          Current Match
+        </h2>
+
+        <div
+          style={{
+            color: "#8f849e",
+            fontSize: 12,
+            marginTop: 5,
+          }}
+        >
+          Select the two teams, choose the winner and save the round.
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "8px 12px",
+          borderRadius: 999,
+          border: "1px solid rgba(192,132,252,0.18)",
+          background: "rgba(126,34,206,0.08)",
+          color: "#d8b4fe",
+          fontSize: 11,
+          fontWeight: 900,
+        }}
+      >
+        {sundayRoundDraft.roundName || "New Round"}
+      </div>
     </div>
 
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)",
-        gap: 10,
+        gridTemplateColumns: isMobile
+  ? "1fr"
+  : "repeat(3, minmax(180px, 1fr))",
+        gap: 14,
+        padding: 16,
+        borderRadius: 16,
+        background: "rgba(255,255,255,0.025)",
+        border: "1px solid rgba(255,255,255,0.06)",
       }}
     >
-      <input
-        value={sundayRoundDraft.roundName}
-        onChange={(e) =>
-          setSundayRoundDraft({
-            ...sundayRoundDraft,
-            roundName: e.target.value,
-          })
-        }
-        style={inputStyle(false)}
-        placeholder="Round name"
-      />
+      
 
-      <select
-        value={sundayRoundDraft.teamAIndex}
-        onChange={(e) =>
-          setSundayRoundDraft({
-            ...sundayRoundDraft,
-            teamAIndex: e.target.value,
-          })
-        }
-        style={inputStyle(false)}
-      >
-        <option value="">Team A</option>
-        {sundayTeams.map((team, index) => (
-          <option key={team.name} value={index}>
-            {team.name}
-          </option>
-        ))}
-      </select>
+      <div>
+        <label
+          style={{
+            display: "block",
+            color: "#8f849e",
+            fontSize: 11,
+            fontWeight: 850,
+            marginBottom: 6,
+          }}
+        >
+          TEAM A
+        </label>
 
-      <select
-        value={sundayRoundDraft.teamBIndex}
-        onChange={(e) =>
-          setSundayRoundDraft({
-            ...sundayRoundDraft,
-            teamBIndex: e.target.value,
-          })
-        }
-        style={inputStyle(false)}
-      >
-        <option value="">Team B</option>
-        {sundayTeams.map((team, index) => (
-          <option key={team.name} value={index}>
-            {team.name}
-          </option>
-        ))}
-      </select>
+        <select
+          value={sundayRoundDraft.teamAIndex}
+          onChange={(e) =>
+            setSundayRoundDraft({
+              ...sundayRoundDraft,
+              teamAIndex: e.target.value,
+            })
+          }
+          style={inputStyle(false)}
+        >
+          <option value="">Select Team A</option>
 
-      <select
-        value={sundayRoundDraft.winnerIndex}
-        onChange={(e) =>
-          setSundayRoundDraft({
-            ...sundayRoundDraft,
-            winnerIndex: e.target.value,
-          })
-        }
-        style={inputStyle(false)}
-      >
-        <option value="">Winner optional</option>
-        {sundayTeams.map((team, index) => (
-          <option key={team.name} value={index}>
-            {team.name}
-          </option>
-        ))}
-      </select>
+          {sundayTeams.map((team, index) => (
+            <option key={`team-a-${team.name}`} value={index}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          style={{
+            display: "block",
+            color: "#8f849e",
+            fontSize: 11,
+            fontWeight: 850,
+            marginBottom: 6,
+          }}
+        >
+          TEAM B
+        </label>
+
+        <select
+          value={sundayRoundDraft.teamBIndex}
+          onChange={(e) =>
+            setSundayRoundDraft({
+              ...sundayRoundDraft,
+              teamBIndex: e.target.value,
+            })
+          }
+          style={inputStyle(false)}
+        >
+          <option value="">Select Team B</option>
+
+          {sundayTeams.map((team, index) => (
+            <option key={`team-b-${team.name}`} value={index}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          style={{
+            display: "block",
+            color: "#8f849e",
+            fontSize: 11,
+            fontWeight: 850,
+            marginBottom: 6,
+          }}
+        >
+          WINNER
+        </label>
+
+        <select
+          value={sundayRoundDraft.winnerIndex}
+          onChange={(e) =>
+            setSundayRoundDraft({
+              ...sundayRoundDraft,
+              winnerIndex: e.target.value,
+            })
+          }
+          style={inputStyle(false)}
+        >
+          <option value="">Winner optional</option>
+
+          {sundayTeams.map((team, index) => (
+            <option key={`winner-${team.name}`} value={index}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
 
-    <button
-      type="button"
-      onClick={createSundayRound}
-      style={{ ...buttonStyle(true, false), marginTop: 12 }}
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        marginTop: 14,
+      }}
     >
-      ➕ Save Round
-    </button>
+      <button
+        type="button"
+        onClick={createSundayRound}
+        style={buttonStyle(true, false)}
+      >
+        ➕ Save Round
+      </button>
+    </div>
 
     {sundayRounds.length > 0 && (
       <div style={{ marginTop: 18 }}>
-        <h3>Saved Sunday Rounds</h3>
+        <h3 style={{ marginBottom: 12 }}>
+          Saved Sunday Rounds
+        </h3>
 
-        {sundayRounds.map((round) => {
-          const teamA = sundayTeams[round.teamAIndex];
-          const teamB = sundayTeams[round.teamBIndex];
-          const winner =
-            round.winnerIndex === "" ? null : sundayTeams[round.winnerIndex];
+        <div style={{ display: "grid", gap: 10 }}>
+          {sundayRounds.map((round) => {
+            const teamA =
+              sundayTeams[round.teamAIndex];
 
-          return (
-            <div
-              key={round.id}
-              style={{
-                padding: 12,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.06)",
-                marginBottom: 10,
-              }}
-            >
-              <div style={{ fontWeight: 900 }}>
-                {round.roundName}
-              </div>
+            const teamB =
+              sundayTeams[round.teamBIndex];
 
-              <div style={{ color: "#d6caef", marginTop: 4 }}>
-                {teamA?.name || "Team A"} vs {teamB?.name || "Team B"}
-              </div>
+            const winner =
+              round.winnerIndex === ""
+                ? null
+                : sundayTeams[round.winnerIndex];
 
-              {winner && (
-                <div style={{ color: "#facc15", marginTop: 4, fontWeight: 800 }}>
-                  🏆 Winner: {winner.name}
+            return (
+              <div
+                key={round.id}
+                style={{
+                  padding: 12,
+                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.04)",
+                  border:
+                    "1px solid rgba(255,255,255,0.05)",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 900,
+                  }}
+                >
+                  {round.roundName}
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                <div
+                  style={{
+                    color: "#d6caef",
+                    marginTop: 4,
+                    fontSize: 13,
+                  }}
+                >
+                  {teamA?.name || "Team A"} vs{" "}
+                  {teamB?.name || "Team B"}
+                </div>
+
+                {winner && (
+                  <div
+                    style={{
+                      color: "#facc15",
+                      marginTop: 4,
+                      fontWeight: 800,
+                    }}
+                  >
+                    🏆 Winner: {winner.name}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     )}
+
+   <div
+  style={{
+    position: "sticky",
+    bottom: 12,
+    zIndex: 50,
+
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap",
+
+    marginTop: 18,
+    padding: 12,
+
+    borderRadius: 16,
+
+    background:
+      "rgba(12,8,20,0.92)",
+
+    backdropFilter: "blur(18px)",
+    WebkitBackdropFilter:
+      "blur(18px)",
+
+    border:
+      "1px solid rgba(192,132,252,0.20)",
+
+    boxShadow:
+      "0 16px 40px rgba(0,0,0,0.42)",
+  }}
+>
+  <div>
+    <div
+      style={{
+        fontWeight: 900,
+        fontSize: 13,
+      }}
+    >
+      Sunday Match Points
+    </div>
+
+    <div
+      style={{
+        color: "#8f849e",
+        fontSize: 11,
+        marginTop: 2,
+      }}
+    >
+      {sundayEntry.mapName
+        ? `${sundayEntry.mode} • ${sundayEntry.mapName}`
+        : `${sundayEntry.mode} • Current map`}
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={applySundayPoints}
+    style={{
+      ...buttonStyle(
+        true,
+        !canAdmin
+      ),
+      minWidth: isMobile
+        ? "100%"
+        : 190,
+    }}
+    disabled={!canAdmin}
+  >
+    ✓ Apply Sunday Points
+  </button>
+</div>
   </div>
 )}
-                <button onClick={applySundayPoints} style={buttonStyle(true, !canAdmin)} disabled={!canAdmin}>Apply Sunday Points</button>
-              </div>
-              </div>
+</div>
+</div>
             <div style={cardStyle()}>
               <h2 style={{ marginTop: 0 }}>Sunday Match History</h2>
               {state.sundayHistory.length === 0 ? (
@@ -7513,7 +8233,6 @@ const pendingCallout = state.callouts?.find(
             </div>
           </div>
         )}
-
         {tab === "recommendations" && (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "0.9fr 1.4fr", gap: 16 }}>
             <div style={cardStyle()}>
