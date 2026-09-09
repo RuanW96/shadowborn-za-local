@@ -1827,39 +1827,106 @@ async function uploadRankProof(file) {
       return;
     }
 
-    const preparedFile = await prepareRankProofImage(file);
+    let preparedFile = null;
 
-    if (!preparedFile) {
-      alert("Could not prepare the screenshot for upload.");
-      return;
+    try {
+      preparedFile = await prepareRankProofImage(file);
+    } catch (prepareError) {
+      console.warn(
+        "Image preparation failed - original file will be tried:",
+        prepareError
+      );
     }
 
-    const extension =
-      preparedFile.type === "image/png"
-        ? "png"
-        : preparedFile.type === "image/webp"
-        ? "webp"
-        : preparedFile.type === "image/jpeg"
-        ? "jpg"
-        : preparedFile.name?.split(".").pop() || "jpg";
+    const filesToTry = [];
 
-    const fileName =
-      `rank-proof-${loggedInPlayer.id}-${Date.now()}.${extension}`;
+    if (preparedFile) {
+      filesToTry.push(preparedFile);
+    }
 
-    const { error } = await supabase.storage
-      .from("rank-proofs")
-      .upload(fileName, preparedFile, {
-        cacheControl: "3600",
-        upsert: true,
-        contentType: preparedFile.type || "image/jpeg",
-      });
+    if (
+      !preparedFile ||
+      preparedFile !== file
+    ) {
+      filesToTry.push(file);
+    }
 
-    if (error) {
-      console.error("Rank proof upload error:", error);
+    let lastError = null;
+    let uploadedFileName = null;
+
+    for (const fileToUpload of filesToTry) {
+      const type = String(fileToUpload.type || "").toLowerCase();
+
+      let extension = "jpg";
+
+      if (type.includes("png")) extension = "png";
+      else if (type.includes("webp")) extension = "webp";
+      else if (type.includes("heic")) extension = "heic";
+      else if (type.includes("heif")) extension = "heif";
+      else if (type.includes("jpeg")) extension = "jpg";
+      else {
+        extension =
+          String(fileToUpload.name || "")
+            .split(".")
+            .pop()
+            ?.toLowerCase() || "jpg";
+      }
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const storageFileName =
+          `rank-proof-${loggedInPlayer.id}-${Date.now()}-${attempt}.${extension}`;
+
+        try {
+          const { error } = await supabase.storage
+            .from("rank-proofs")
+            .upload(storageFileName, fileToUpload, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType:
+                fileToUpload.type ||
+                "application/octet-stream",
+            });
+
+          if (!error) {
+            uploadedFileName = storageFileName;
+            lastError = null;
+            break;
+          }
+
+          lastError = error;
+
+          console.warn(
+            `Rank proof upload attempt ${attempt} failed:`,
+            error
+          );
+        } catch (uploadError) {
+          lastError = uploadError;
+
+          console.warn(
+            `Rank proof upload attempt ${attempt} crashed:`,
+            uploadError
+          );
+        }
+
+        // Small delay before retry
+        await new Promise((resolve) =>
+          setTimeout(resolve, 700)
+        );
+      }
+
+      if (uploadedFileName) break;
+    }
+
+    if (!uploadedFileName) {
+      console.error(
+        "All rank proof upload attempts failed:",
+        lastError
+      );
 
       alert(
-        "Rank proof upload failed:\n\n" +
-          error.message
+        "Rank proof upload failed.\n\n" +
+          (lastError?.message ||
+            "The phone could not upload this image. Please try again.")
       );
 
       return;
@@ -1867,31 +1934,54 @@ async function uploadRankProof(file) {
 
     const { data } = supabase.storage
       .from("rank-proofs")
-      .getPublicUrl(fileName);
+      .getPublicUrl(uploadedFileName);
 
     setRankRequestDraft((prev) => ({
       ...prev,
       proofUrl: data.publicUrl,
     }));
 
-    alert("✅ Screenshot uploaded successfully.");
+    alert("✅ Screenshot / photo uploaded successfully.");
   } catch (error) {
-    console.error("Rank proof upload failed:", error);
+    console.error(
+      "Unexpected rank proof upload failure:",
+      error
+    );
 
     alert(
-      "Rank proof upload failed:\n\n" +
-        (error?.message || "Please try another screenshot.")
+      "Rank proof upload failed.\n\n" +
+        (error?.message ||
+          "Please try the image again.")
     );
   }
 }
 function chooseRankProof() {
   const input = document.createElement("input");
+
   input.type = "file";
   input.accept = "image/*";
+  input.style.display = "none";
+
+  document.body.appendChild(input);
 
   input.onchange = async () => {
     const file = input.files?.[0];
-    await uploadRankProof(file);
+
+    if (file) {
+      await uploadRankProof(file);
+    }
+
+    input.value = "";
+
+    if (document.body.contains(input)) {
+      document.body.removeChild(input);
+    }
+  };
+
+  input.oncancel = () => {
+    if (document.body.contains(input)) {
+      document.body.removeChild(input);
+    }
   };
 
   input.click();
