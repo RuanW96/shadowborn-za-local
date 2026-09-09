@@ -336,6 +336,73 @@ function LeaderboardCard({ player, index, competitiveScore }) {
   const rank = getRank(competitiveScore ?? 0);
   const isMainSlayer = index < 4;
 
+  const codRankName = player.codRank || "Unranked";
+  const codRankLower = codRankName.toLowerCase();
+
+  const codRankTheme =
+    codRankLower.includes("top 250")
+      ? {
+          accent: "#facc15",
+          border: "rgba(250,204,21,0.90)",
+          glow: "rgba(234,179,8,0.50)",
+          dark: "rgba(54,38,4,0.94)",
+        }
+      : codRankLower.includes("iridescent")
+      ? {
+          accent: "#e879f9",
+          border: "rgba(217,70,239,0.85)",
+          glow: "rgba(168,85,247,0.50)",
+          dark: "rgba(59,7,100,0.94)",
+        }
+      : codRankLower.includes("crimson")
+      ? {
+          accent: "#fb7185",
+          border: "rgba(239,68,68,0.85)",
+          glow: "rgba(220,38,38,0.48)",
+          dark: "rgba(69,10,10,0.94)",
+        }
+      : codRankLower.includes("diamond")
+      ? {
+          accent: "#60a5fa",
+          border: "rgba(59,130,246,0.85)",
+          glow: "rgba(37,99,235,0.45)",
+          dark: "rgba(10,31,68,0.94)",
+        }
+      : codRankLower.includes("platinum")
+      ? {
+          accent: "#67e8f9",
+          border: "rgba(34,211,238,0.82)",
+          glow: "rgba(6,182,212,0.42)",
+          dark: "rgba(8,51,68,0.92)",
+        }
+      : codRankLower.includes("gold")
+      ? {
+          accent: "#fde047",
+          border: "rgba(250,204,21,0.80)",
+          glow: "rgba(234,179,8,0.42)",
+          dark: "rgba(66,45,3,0.92)",
+        }
+      : codRankLower.includes("silver")
+      ? {
+          accent: "#e2e8f0",
+          border: "rgba(226,232,240,0.72)",
+          glow: "rgba(148,163,184,0.38)",
+          dark: "rgba(30,41,59,0.92)",
+        }
+      : codRankLower.includes("bronze")
+      ? {
+          accent: "#f59e6b",
+          border: "rgba(245,158,107,0.75)",
+          glow: "rgba(180,83,9,0.42)",
+          dark: "rgba(69,26,3,0.92)",
+        }
+      : {
+          accent: "#c084fc",
+          border: "rgba(168,85,247,0.38)",
+          glow: "rgba(126,34,206,0.28)",
+          dark: "rgba(20,14,31,0.94)",
+        };
+
   return (
     <div
       style={{
@@ -384,33 +451,77 @@ animation: "none",
     #{index + 1} {player.name}
   </span>
 
-  {player.codRank && RANK_BADGES[player.codRank] ? (
-  <img
-    src={RANK_BADGES[player.codRank]}
-    alt={player.codRank}
-    title={player.codRank}
+ {player.codRank ? (
+  <div
     style={{
-  position: "absolute",
-  top: 15,
-  right: 25,
-  width: 135,
-  height: 135,
-  objectFit: "contain",
-  zIndex: 5,
+      position: "absolute",
+      top: 14,
+      right: 18,
+      zIndex: 5,
 
-  // glow
-  filter: "drop-shadow(0 0 20px rgba(168,85,247,0.95))",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
 
-  // background glow bubble
-  background: "rgba(10,10,20,0.55)",
-  borderRadius: "50%",
-  padding: 10,
-  backdropFilter: "blur(8px)",
+      padding: "7px 11px",
+      borderRadius: 12,
 
-  // outline
-  border: "2px solid rgba(168,85,247,0.45)",
-}}
-  />
+      background: `linear-gradient(
+        135deg,
+        ${codRankTheme.dark},
+        rgba(5,5,10,0.88)
+      )`,
+
+      border: `1px solid ${codRankTheme.border}`,
+
+      boxShadow: `0 0 18px ${codRankTheme.glow}`,
+
+      backdropFilter: "blur(10px)",
+      WebkitBackdropFilter: "blur(10px)",
+    }}
+  >
+    {RANK_BADGES[player.codRank] ? (
+      <img
+        src={RANK_BADGES[player.codRank]}
+        alt={player.codRank}
+        style={{
+          width: 32,
+          height: 32,
+          objectFit: "contain",
+          filter: `drop-shadow(0 0 8px ${codRankTheme.glow})`,
+        }}
+      />
+    ) : null}
+
+    <div>
+      <div
+        style={{
+          color: codRankTheme.accent,
+          fontSize: 7,
+          fontWeight: 900,
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          opacity: 0.75,
+        }}
+      >
+        COD RANK
+      </div>
+
+      <div
+        style={{
+          color: codRankTheme.accent,
+          fontSize: 11,
+          fontWeight: 1000,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+          textShadow: `0 0 10px ${codRankTheme.glow}`,
+        }}
+      >
+        {player.codRank}
+      </div>
+    </div>
+  </div>
 ) : null}
 </div>
 
@@ -1552,7 +1663,7 @@ function chooseCardPhoto(playerId) {
   const input = document.createElement("input");
 
   input.type = "file";
-  input.accept = "image/jpeg,image/png,image/webp";
+  input.accept = "image/*";
 
   input.onchange = async () => {
     const file = input.files?.[0];
@@ -1564,34 +1675,168 @@ function chooseCardPhoto(playerId) {
 
   input.click();
 }
+async function prepareRankProofImage(file) {
+  if (!file) return null;
+
+  const supportedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
+
+  // If the phone gives us a format the browser cannot safely process,
+  // keep the original file and let Supabase try the upload.
+  if (!supportedTypes.includes(file.type)) {
+    return file;
+  }
+
+  // Small files do not need compression.
+  if (file.size <= 1500000) {
+    return file;
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const img = new Image();
+
+      img.onload = () => {
+        const maxDimension = 1800;
+
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDimension || height > maxDimension) {
+          const scale = Math.min(
+            maxDimension / width,
+            maxDimension / height
+          );
+
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+
+        const canvas = document.createElement("canvas");
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+
+            const compressedFile = new File(
+              [blob],
+              `rank-proof-${Date.now()}.jpg`,
+              {
+                type: "image/jpeg",
+                lastModified: Date.now(),
+              }
+            );
+
+            resolve(compressedFile);
+          },
+          "image/jpeg",
+          0.82
+        );
+      };
+
+      img.onerror = () => resolve(file);
+
+      img.src = reader.result;
+    };
+
+    reader.onerror = () => resolve(file);
+
+    reader.readAsDataURL(file);
+  });
+}
 async function uploadRankProof(file) {
   if (!file || !loggedInPlayer) return;
 
-  const extension = file.name.split(".").pop();
-  const fileName = `rank-proof-${loggedInPlayer.id}-${Date.now()}.${extension}`;
+  try {
+    const fileNameLower = String(file.name || "").toLowerCase();
 
-  const { error } = await supabase.storage
-    .from("rank-proofs")
-    .upload(fileName, file, {
-      cacheControl: "3600",
-      upsert: true,
-    });
+    const looksLikeImage =
+      file.type?.startsWith("image/") ||
+      fileNameLower.endsWith(".jpg") ||
+      fileNameLower.endsWith(".jpeg") ||
+      fileNameLower.endsWith(".png") ||
+      fileNameLower.endsWith(".webp") ||
+      fileNameLower.endsWith(".jfif") ||
+      fileNameLower.endsWith(".heic") ||
+      fileNameLower.endsWith(".heif");
 
-  if (error) {
-    alert("Rank proof upload failed: " + error.message);
-    return;
+    if (!looksLikeImage) {
+      alert("Please select an image or screenshot.");
+      return;
+    }
+
+    const preparedFile = await prepareRankProofImage(file);
+
+    if (!preparedFile) {
+      alert("Could not prepare the screenshot for upload.");
+      return;
+    }
+
+    const extension =
+      preparedFile.type === "image/png"
+        ? "png"
+        : preparedFile.type === "image/webp"
+        ? "webp"
+        : preparedFile.type === "image/jpeg"
+        ? "jpg"
+        : preparedFile.name?.split(".").pop() || "jpg";
+
+    const fileName =
+      `rank-proof-${loggedInPlayer.id}-${Date.now()}.${extension}`;
+
+    const { error } = await supabase.storage
+      .from("rank-proofs")
+      .upload(fileName, preparedFile, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: preparedFile.type || "image/jpeg",
+      });
+
+    if (error) {
+      console.error("Rank proof upload error:", error);
+
+      alert(
+        "Rank proof upload failed:\n\n" +
+          error.message
+      );
+
+      return;
+    }
+
+    const { data } = supabase.storage
+      .from("rank-proofs")
+      .getPublicUrl(fileName);
+
+    setRankRequestDraft((prev) => ({
+      ...prev,
+      proofUrl: data.publicUrl,
+    }));
+
+    alert("✅ Screenshot uploaded successfully.");
+  } catch (error) {
+    console.error("Rank proof upload failed:", error);
+
+    alert(
+      "Rank proof upload failed:\n\n" +
+        (error?.message || "Please try another screenshot.")
+    );
   }
-
-  const { data } = supabase.storage.from("rank-proofs").getPublicUrl(fileName);
-
-  setRankRequestDraft((prev) => ({
-    ...prev,
-    proofUrl: data.publicUrl,
-  }));
-
-  alert("Screenshot uploaded successfully.");
 }
-
 function chooseRankProof() {
   const input = document.createElement("input");
   input.type = "file";
@@ -1718,84 +1963,126 @@ function archiveSeasonAndReset() {
   );
 
   if (!seasonName) return;
-if (
-  !window.confirm(
-    "Archive the Top 2 SMG and Top 2 AR players and start a new Competitive Season?"
-  )
-)
-  return;
-  
+
+  if (
+    !window.confirm(
+      "Archive this Competitive Season?\n\n" +
+        "This will:\n" +
+        "• Save the season champions\n" +
+        "• Save every player's final BO7 rank\n" +
+        "• Reset Competitive Rating stats\n" +
+        "• Reset every BO7 rank to Unranked\n\n" +
+        "Continue?"
+    )
+  ) {
+    return;
+  }
 
   const smgTop2 = smgPlayers.slice(0, 2).map((p, index) => ({
-  position: index + 1,
-  weaponType: "SMG",
-  playerId: p.id,
-  playerName: p.name,
-  points: getCompetitiveScore(p),
-  rank: getRank(getCompetitiveScore(p)).name,
-  tournamentWins: p.tournamentWins,
-  wins: p.wins,
-  losses: p.losses,
-}));
+    position: index + 1,
+    weaponType: "SMG",
+    playerId: p.id,
+    playerName: p.name,
+    points: getCompetitiveScore(p),
+    rank: getRank(getCompetitiveScore(p)).name,
 
-const arTop2 = arPlayers.slice(0, 2).map((p, index) => ({
-  position: index + 1,
-  weaponType: "AR",
-  playerId: p.id,
-  playerName: p.name,
-  points: getCompetitiveScore(p),
-  rank: getRank(getCompetitiveScore(p)).name,
-  tournamentWins: p.tournamentWins,
-  wins: p.wins,
-  losses: p.losses,
-}));
+    // Final COD rank for this season
+    codRank: p.codRank || "Unranked",
 
-const top4 = [
-  ...smgTop2,
-  ...arTop2,
-];
+    tournamentWins: p.tournamentWins,
+    wins: p.wins,
+    losses: p.losses,
+  }));
+
+  const arTop2 = arPlayers.slice(0, 2).map((p, index) => ({
+    position: index + 1,
+    weaponType: "AR",
+    playerId: p.id,
+    playerName: p.name,
+    points: getCompetitiveScore(p),
+    rank: getRank(getCompetitiveScore(p)).name,
+
+    // Final COD rank for this season
+    codRank: p.codRank || "Unranked",
+
+    tournamentWins: p.tournamentWins,
+    wins: p.wins,
+    losses: p.losses,
+  }));
+
+  const top4 = [...smgTop2, ...arTop2];
+
+  // Save every player's final rank before resetting
+  const finalPlayerRanks = players.map((p) => ({
+    playerId: p.id,
+    playerName: p.name,
+    codRank: p.codRank || "Unranked",
+    points: getCompetitiveScore(p),
+    wins: Number(p.wins || 0),
+    losses: Number(p.losses || 0),
+    tournamentWins: Number(p.tournamentWins || 0),
+  }));
 
   updateState((prev) => ({
     ...prev,
+
     seasonHistory: [
       {
         id: Date.now(),
         seasonName,
         endedAt: new Date().toLocaleString(),
+
         top4,
+
+        // Permanent snapshot of final ranks
+        finalPlayerRanks,
       },
       ...(prev.seasonHistory || []),
     ],
+
     players: prev.players.map((p) => ({
-  ...p,
+      ...p,
 
-  // Leaderboard
-  points: 0,
-  wins: 0,
-  losses: 0,
-  mvpPoints: 0,
-  activityPoints: 0,
-  tournamentWins: 0,
+      // BO7 Rank
+      codRank: "",
 
-  // CR System
-  weeklyChallenges: 0,
-  trainingAttended: 0,
-  trainingMissed: 0,
-  crAdjustment: 0,
+      // Leaderboard
+      points: 0,
+      wins: 0,
+      losses: 0,
+      mvpPoints: 0,
+      activityPoints: 0,
+      tournamentWins: 0,
 
-  // Call-outs (if you use these)
-  calloutWins: 0,
-  calloutLosses: 0,
-})),
+      // CR System
+      weeklyChallenges: 0,
+      trainingAttended: 0,
+      trainingMissed: 0,
+      crAdjustment: 0,
+
+      // Call-outs
+      calloutWins: 0,
+      calloutLosses: 0,
+    })),
   }));
 
+  setRankRequestDraft({
+    rank: "",
+    proofUrl: "",
+  });
+
   alert(
-  "🏆 Season archived successfully!\n\n" +
-  "Archived:\n" +
-  "• Top 2 SMG Champions\n" +
-  "• Top 2 AR Champions\n\n" +
-  "All Competitive Rating (CR) stats have been reset for the new season."
-);
+    "🏆 Season archived successfully!\n\n" +
+      "Archived:\n" +
+      "• Top 2 SMG Champions\n" +
+      "• Top 2 AR Champions\n" +
+      "• Final BO7 rank for every player\n\n" +
+      "New season started:\n" +
+      "• Competitive Rating reset\n" +
+      "• Wins / Losses reset\n" +
+      "• Tournament Wins reset\n" +
+      "• All BO7 ranks reset to Unranked"
+  );
 }
 function resetPlayerStats(playerId) {
   if (!canAdmin) return;
