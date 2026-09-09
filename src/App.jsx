@@ -25,6 +25,7 @@ import {
 import { supabase } from "./supabase";
 import LoginIntro from "./components/LoginIntro";
 import DivisionPlayerCard from "./components/DivisionPlayerCard";
+import heic2any from "heic2any";
 import TournamentResults from "./components/TournamentResults";
 import Scrims from "./components/Scrims";
 const STORAGE_ROW_ID = 1;
@@ -1678,21 +1679,62 @@ function chooseCardPhoto(playerId) {
 async function prepareRankProofImage(file) {
   if (!file) return null;
 
+  let workingFile = file;
+
+  const fileName = String(file.name || "").toLowerCase();
+
+  const isHeic =
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    fileName.endsWith(".heic") ||
+    fileName.endsWith(".heif");
+
+  // Convert iPhone / phone HEIC photos to JPEG
+  if (isHeic) {
+    try {
+      const convertedBlob = await heic2any({
+        blob: file,
+        toType: "image/jpeg",
+        quality: 0.85,
+      });
+
+      const finalBlob = Array.isArray(convertedBlob)
+        ? convertedBlob[0]
+        : convertedBlob;
+
+      workingFile = new File(
+        [finalBlob],
+        `rank-proof-${Date.now()}.jpg`,
+        {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }
+      );
+    } catch (error) {
+      console.error("HEIC conversion failed:", error);
+
+      alert(
+        "This phone photo could not be converted.\n\n" +
+          "Please try another photo or use a screenshot."
+      );
+
+      return null;
+    }
+  }
+
   const supportedTypes = [
     "image/jpeg",
     "image/png",
     "image/webp",
   ];
 
-  // If the phone gives us a format the browser cannot safely process,
-  // keep the original file and let Supabase try the upload.
-  if (!supportedTypes.includes(file.type)) {
-    return file;
+  if (!supportedTypes.includes(workingFile.type)) {
+    return workingFile;
   }
 
-  // Small files do not need compression.
-  if (file.size <= 1500000) {
-    return file;
+  // Small files do not need compression
+  if (workingFile.size <= 1500000) {
+    return workingFile;
   }
 
   return new Promise((resolve) => {
@@ -1724,12 +1766,17 @@ async function prepareRankProofImage(file) {
 
         const ctx = canvas.getContext("2d");
 
+        if (!ctx) {
+          resolve(workingFile);
+          return;
+        }
+
         ctx.drawImage(img, 0, 0, width, height);
 
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              resolve(file);
+              resolve(workingFile);
               return;
             }
 
@@ -1749,14 +1796,14 @@ async function prepareRankProofImage(file) {
         );
       };
 
-      img.onerror = () => resolve(file);
+      img.onerror = () => resolve(workingFile);
 
       img.src = reader.result;
     };
 
-    reader.onerror = () => resolve(file);
+    reader.onerror = () => resolve(workingFile);
 
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(workingFile);
   });
 }
 async function uploadRankProof(file) {
