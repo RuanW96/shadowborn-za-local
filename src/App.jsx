@@ -6204,32 +6204,86 @@ const pendingCallout = state.callouts?.find(
       overflowY: "auto",
     }}
   >
-    {/* Header */}
+    {/* Shadowborn Menu Header */}
+<div
+  style={{
+    position: "relative",
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottom: "1px solid rgba(168,85,247,0.18)",
+  }}
+>
+  <button
+    type="button"
+    onClick={() => setMenuOpen(false)}
+    style={{
+      position: "absolute",
+      top: 0,
+      right: 0,
+      width: 34,
+      height: 34,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "rgba(255,255,255,0.04)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 10,
+      color: "white",
+      cursor: "pointer",
+      zIndex: 2,
+    }}
+  >
+    <X size={20} />
+  </button>
+
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      textAlign: "center",
+      paddingTop: 6,
+    }}
+  >
+    <img
+      src={state.logoUrl || DEFAULT_LOGO}
+      alt="Shadowborn ZA"
+      style={{
+        width: 170,
+        height: 170,
+        objectFit: "contain",
+        borderRadius: 20,
+        filter: "drop-shadow(0 0 20px rgba(126,34,206,0.32))",
+      }}
+    />
+
     <div
       style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 24,
+        marginTop: 8,
+        fontSize: 18,
+        fontWeight: 950,
+        letterSpacing: 1.2,
+        color: "#ffffff",
       }}
     >
-      <div style={{ fontWeight: 900, fontSize: 20 }}>
-        Shadowborn ZA
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setMenuOpen(false)}
-        style={{
-          background: "transparent",
-          border: "none",
-          color: "white",
-          cursor: "pointer",
-        }}
-      >
-        <X size={22} />
-      </button>
+      SHADOWBORN
+      <span style={{ color: "#a855f7" }}>_ZA</span>
     </div>
+
+    <div
+      style={{
+        marginTop: 5,
+        color: "#756b82",
+        fontSize: 8,
+        fontWeight: 800,
+        letterSpacing: 2.2,
+        textTransform: "uppercase",
+      }}
+    >
+      Victory Awaits In The Shadows
+    </div>
+  </div>
+</div>
 
     {/* Menu Items */}
    {[
