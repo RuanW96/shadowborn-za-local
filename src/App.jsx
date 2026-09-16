@@ -2191,11 +2191,13 @@ function archiveSeasonAndReset() {
       activityPoints: 0,
       tournamentWins: 0,
 
-      // CR System
-      weeklyChallenges: 0,
-      trainingAttended: 0,
-      trainingMissed: 0,
-      crAdjustment: 0,
+     // CR System
+competitiveRating: 0,
+weeklyChallenges: 0,
+weeklyChallengeHistory: [],
+trainingAttended: 0,
+trainingMissed: 0,
+crAdjustment: 0,
 
       // Call-outs
       calloutWins: 0,
@@ -2230,12 +2232,26 @@ function resetPlayerStats(playerId) {
       p.id === playerId
         ? {
             ...p,
+
+            // Current leaderboard stats
             points: 0,
             wins: 0,
             losses: 0,
             tournamentWins: 0,
             mvpPoints: 0,
             activityPoints: 0,
+
+            // Complete CR reset
+            competitiveRating: 0,
+            weeklyChallenges: 0,
+            weeklyChallengeHistory: [],
+            trainingAttended: 0,
+            trainingMissed: 0,
+            crAdjustment: 0,
+
+            // Current-season callout stats
+            calloutWins: 0,
+            calloutLosses: 0,
           }
         : p
     ),
