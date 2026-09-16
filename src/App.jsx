@@ -561,6 +561,7 @@ export default function App() {
 });
   const [menuOpen, setMenuOpen] = useState(false);
   const [onlinePlayers, setOnlinePlayers] = useState([]);
+  const [overallLeaderboardOpen, setOverallLeaderboardOpen] = useState(false);
 const [onlinePlayersExpanded, setOnlinePlayersExpanded] =
   useState(false);
   const [pin, setPin] = useState("");
@@ -2089,6 +2090,30 @@ legacyStats: {
      updateState((prev) => ({
       ...prev,
     players: prev.players.filter((p) => p.id !== playerId),
+  }));
+}
+function deleteSeasonHistory(seasonId) {
+  if (!canAdmin) return;
+
+  const season = (state.seasonHistory || []).find(
+    (item) => item.id === seasonId
+  );
+
+  const seasonName = season?.seasonName || "this season";
+
+  const confirmed = window.confirm(
+    `Delete "${seasonName}" from Season Leaderboard History?\n\n` +
+      "This will only delete this archived history entry.\n" +
+      "It will NOT affect the current leaderboard or player stats."
+  );
+
+  if (!confirmed) return;
+
+  updateState((prev) => ({
+    ...prev,
+    seasonHistory: (prev.seasonHistory || []).filter(
+      (item) => item.id !== seasonId
+    ),
   }));
 }
 function archiveSeasonAndReset() {
@@ -6962,6 +6987,211 @@ const pendingCallout = state.callouts?.find(
       ))}
   </div>
 )}
+
+{/* OVERALL CLAN LEADERBOARD */}
+<div
+  style={{
+    ...cardStyle(),
+    marginBottom: 18,
+    overflow: "hidden",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+      marginBottom: 16,
+    }}
+  >
+    <div>
+      <h2 style={{ margin: 0 }}>🏆 Overall Clan Leaderboard</h2>
+
+      <div
+        style={{
+          color: "#d6caef",
+          marginTop: 5,
+          fontSize: 13,
+        }}
+      >
+        All Shadowborn players ranked by Competitive Rating
+      </div>
+    </div>
+
+    <div
+      style={{
+        padding: "7px 12px",
+        borderRadius: 999,
+        background: "rgba(168,85,247,0.12)",
+        border: "1px solid rgba(168,85,247,0.28)",
+        color: "#d8b4fe",
+        fontSize: 12,
+        fontWeight: 900,
+      }}
+    >
+      {competitivePlayers.length} PLAYERS
+    </div>
+  </div>
+
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "55px 1fr 90px",
+      gap: 10,
+      padding: "0 12px 9px",
+      color: "#9d90b7",
+      fontSize: 11,
+      fontWeight: 900,
+      letterSpacing: 1,
+    }}
+  >
+    <div>#</div>
+    <div>PLAYER</div>
+    <div style={{ textAlign: "right" }}>CR</div>
+  </div>
+
+  {(overallLeaderboardOpen
+    ? competitivePlayers
+    : competitivePlayers.slice(0, 10)
+  ).map((player, index) => {
+    const score = getCompetitiveScore(player);
+
+    const positionStyle =
+      index === 0
+        ? {
+            icon: "🥇",
+            border: "rgba(250,204,21,0.35)",
+            background: "rgba(250,204,21,0.07)",
+          }
+        : index === 1
+        ? {
+            icon: "🥈",
+            border: "rgba(226,232,240,0.25)",
+            background: "rgba(226,232,240,0.05)",
+          }
+        : index === 2
+        ? {
+            icon: "🥉",
+            border: "rgba(251,146,60,0.28)",
+            background: "rgba(251,146,60,0.05)",
+          }
+        : {
+            icon: `#${index + 1}`,
+            border: "rgba(168,85,247,0.12)",
+            background: "rgba(255,255,255,0.025)",
+          };
+
+    return (
+      <div
+        key={player.id}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "55px 1fr 90px",
+          gap: 10,
+          alignItems: "center",
+          padding: "10px 12px",
+          marginBottom: 6,
+          borderRadius: 12,
+          border: `1px solid ${positionStyle.border}`,
+          background: positionStyle.background,
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 900,
+            fontSize: index < 3 ? 18 : 13,
+          }}
+        >
+          {positionStyle.icon}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            minWidth: 0,
+          }}
+        >
+          {player.avatar ? (
+            <img
+              src={player.avatar}
+              alt=""
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 9,
+                objectFit: "cover",
+                border: "1px solid rgba(168,85,247,0.35)",
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 9,
+                display: "grid",
+                placeItems: "center",
+                background: "rgba(168,85,247,0.12)",
+                border: "1px solid rgba(168,85,247,0.35)",
+                fontSize: 11,
+                fontWeight: 900,
+                flexShrink: 0,
+              }}
+            >
+              {player.emblem || "SB"}
+            </div>
+          )}
+
+          <div
+            style={{
+              fontWeight: 900,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {player.name}
+          </div>
+        </div>
+
+        <div
+          style={{
+            textAlign: "right",
+            fontWeight: 950,
+            color: "#d8b4fe",
+            fontSize: 15,
+          }}
+        >
+          {score}
+        </div>
+      </div>
+    );
+  })}
+
+  {competitivePlayers.length > 10 && (
+    <button
+      type="button"
+      onClick={() =>
+        setOverallLeaderboardOpen((prev) => !prev)
+      }
+      style={{
+        ...buttonStyle(false, false),
+        width: "100%",
+        marginTop: 8,
+        padding: "12px 14px",
+      }}
+    >
+      {overallLeaderboardOpen
+        ? "▲ Collapse Leaderboard"
+        : `▼ Show Full Leaderboard (${competitivePlayers.length} Players)`}
+    </button>
+  )}
+</div>
     <div
   style={{
     display: "grid",
@@ -7072,10 +7302,45 @@ const pendingCallout = state.callouts?.find(
           border: "1px solid rgba(250,204,21,0.25)",
         }}
       >
-        <h3>{season.seasonName}</h3>
-        <div style={{ color: "#c4b5fd", marginBottom: 10 }}>
-          Ended: {season.endedAt}
-        </div>
+       <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 4,
+  }}
+>
+  <h3 style={{ margin: 0 }}>{season.seasonName}</h3>
+
+  {canAdmin && (
+    <button
+      type="button"
+      onClick={() => deleteSeasonHistory(season.id)}
+      style={{
+        padding: "7px 11px",
+        borderRadius: 9,
+        border: "1px solid rgba(239,68,68,0.45)",
+        background: "rgba(239,68,68,0.10)",
+        color: "#fca5a5",
+        fontWeight: 800,
+        fontSize: 12,
+        cursor: "pointer",
+      }}
+    >
+      🗑 Delete
+    </button>
+  )}
+</div>
+
+<div
+  style={{
+    color: "#c4b5fd",
+    marginBottom: 10,
+  }}
+>
+  Ended: {season.endedAt}
+</div>
         {(() => {
   const smg = season.top4.filter((p) => p.weaponType === "SMG");
   const ar = season.top4.filter((p) => p.weaponType === "AR");
