@@ -4963,7 +4963,7 @@ function VisualBracketBoardV3() {
               }}
             >
               <img
-                src={state.logoUrl || DEFAULT_LOGO}
+                src="/sbza-icon-512.png"
                 alt="Shadowborn ZA"
                 style={{
                   width: "100%",
@@ -5287,7 +5287,7 @@ const pendingCallout = state.callouts?.find(
 
   {/* Faint Shadowborn emblem */}
   <img
-    src={state.logoUrl || DEFAULT_LOGO}
+    src="/sbza-icon-512.png"
     alt=""
     style={{
       position: "fixed",
@@ -5823,7 +5823,7 @@ const pendingCallout = state.callouts?.find(
       }}
     >
       <img
-        src={state.logoUrl || DEFAULT_LOGO}
+        src="/sbza-icon-512.png"
         alt="Shadowborn ZA"
         style={{
           width: "100%",
@@ -6246,7 +6246,7 @@ const pendingCallout = state.callouts?.find(
     }}
   >
     <img
-      src={state.logoUrl || DEFAULT_LOGO}
+      src="/sbza-icon-512.png"
       alt="Shadowborn ZA"
       style={{
         width: 170,
