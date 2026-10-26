@@ -4974,7 +4974,31 @@ function VisualBracketBoardV3() {
               />
             </div>
           </div>
-
+{/* MW4 Season Branding */}
+<div
+  style={{
+    width: "100%",
+    maxWidth: 280,
+    height: isMobile ? 85 : 100,
+    margin: "0 auto 18px",
+    borderRadius: 12,
+    overflow: "hidden",
+    border: "1px solid rgba(168,85,247,0.3)",
+    boxShadow: "0 0 25px rgba(168,85,247,0.18)",
+  }}
+>
+  <img
+    src="/mw4-season-banner.png"
+    alt="MW4 Season"
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      objectPosition: "center",
+      display: "block",
+    }}
+  />
+</div>
           <div
             style={{
               textAlign: "center",
@@ -5798,8 +5822,8 @@ const pendingCallout = state.callouts?.find(
       zIndex: 2,
       display: "grid",
       gridTemplateColumns: isMobile
-        ? "1fr"
-        : "170px minmax(0, 1fr)",
+  ? "1fr"
+  : "170px minmax(0, 1fr) 680px",
       gap: isMobile ? 20 : 28,
       alignItems: "center",
     }}
@@ -5934,10 +5958,39 @@ const pendingCallout = state.callouts?.find(
         >
           {players.length} Clan Members
         </div>
-      </div>
+            </div>
     </div>
-  </div>
-</div>  
+
+    {/* MW4 Season Artwork */}
+    <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    minWidth: 0,
+    height: isMobile ? 150 : 190,
+    overflow: "hidden",
+    borderRadius: 16,
+    alignSelf: "center",
+    background: "rgba(10, 3, 20, 0.4)",
+  }}
+>
+  <img
+    src="/mw4-season-banner.png"
+    alt="MW4 Season"
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      objectPosition: "center center",
+      borderRadius: 16,
+      display: "block",
+    }}
+   />
+</div>
+</div>
+</div>
 
 {/* ONLINE MEMBERS */}
 <div
